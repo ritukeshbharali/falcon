@@ -30,3 +30,28 @@
 *.exe
 *.out
 *.app
+
+# Undo
+*.un~
+*.cpp.un~
+
+# Output files
+*.dat
+*.vtu
+*.pvd
+*.log
+*.pdf
+*.p
+*.txt
+*.csv
+
+# Doc
+/docs/html
+
+# Build (executables, object files)
+/build/OBJ_OPT
+/build/falcon-opt
+/build/OBJ
+/build/falcon
+/build/OBJ_DBG
+/build/falcon-dbg
