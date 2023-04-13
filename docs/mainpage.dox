@@ -1,0 +1,46 @@
+/**
+
+@mainpage Introduction
+
+<b>falcon</b> is Finite Element Analysis software, written in C++. It is built on top of the Jem and Jive libraries, developed at [Dynaflow Research Group](https://dynaflow.com/). It offers the following features:
+
+- Object-oriented C++
+- Modular, with decoupled code components
+- Several finite element models and solvers
+- Parallel computing with MPI and system level threads
+- Interface to external linear solvers, Umfpack, Intel Pardiso, and MUMPS.
+- VTK Writer for visualization with Paraview, Mayavi.
+
+@subsubsection authors Authors and Contributors
+
+ - Ritukesh Bharali
+ - Frans P. van der Meer
+ - Vinh Phu Nguyen
+
+@subsubsection gstarted Getting started
+
+<b>falcon</b> depends on the Jem and Jive libraries, so the first step is too install them. The Jem and Jive archives may be obtained from the <a href="https://software.dynaflow.com/jive/">Dynaflow Research Group website</a>.
+
+  - Install the pre-requisites
+  > (sudo) apt-get install build-essential g++ zlib1g-dev libreadline-dev freeglut3-dev
+  
+  - Unpack archives Jem and Jive (say, in /home/user/libraries/jemjive)
+  - Enter jem directory and execute
+  > ./configure && make                                                                        
+  > export JEMDIR='/home/user/libraries/jemjive/jem-3.0'
+  - Enter Jive directory and execute
+  > ./configure && make                                                                        
+  > export JIVEDIR='/home/user/libraries/jemjive/jive-3.0'
+
+@note 
+
+  For parallel support, configure Jem as:
+  > ./configure --with-mpi --mpi-incdirs=/usr/include/x86_64-linux-gnu/openmpi --mpi-libdirs=/usr/lib/x86_64-linux-gnu/openmpi/lib --mpi-libs="mpi_cxx mpi"* 
+
+  - Obtain the falcon source files
+  - Enter the 'build' directory
+  - Build optimized executable with 'make opt'
+  - Enter the 'tests' directory, execute 'do_tests.sh' script
+  - Larger (field-specific) problems may be run from 'demo' directory
+
+*/
