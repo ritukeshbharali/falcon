@@ -1,3 +1,13 @@
+falcon Copyright and License
+=============================
+
+falcon is copyrighted by its authors, listed below in this document. It is free software package distributed under the **GNU Lesser General Public License 2.1 or higher**.
+
+
+[GNU Lesser General Public License version 2.1](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html)
+-------------------------------------------------------------------------------------------------------------------
+----
+```
                   GNU LESSER GENERAL PUBLIC LICENSE
                        Version 2.1, February 1999
 
@@ -485,8 +495,7 @@ convey the exclusion of warranty; and each file should have at least the
 
     You should have received a copy of the GNU Lesser General Public
     License along with this library; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301
-    USA
+    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 Also add information on how to contact you by electronic and paper mail.
 
@@ -495,10 +504,24 @@ school, if any, to sign a "copyright disclaimer" for the library, if
 necessary.  Here is a sample; alter the names:
 
   Yoyodyne, Inc., hereby disclaims all copyright interest in the
-  library `Frob' (a library for tweaking knobs) written by James Random
-  Hacker.
+  library `Frob' (a library for tweaking knobs) written by James Random Hacker.
 
   <signature of Ty Coon>, 1 April 1990
   Ty Coon, President of Vice
 
 That's all there is to it!
+```
+
+Third party software
+----------------------
+
+The directory `src/solvers/implicit/` contains wrappers to third party software. <b>The user is responsible for obtaining these software and abiding by their copyright and licenses.</b>
+
+
+Authors and contributors
+-------------------------
+
+The authors and contributors of the falcon software package are:
+ - Ritukesh Bharali 
+ - Frans P. van der Meer
+ - Vinh Phu Nguyen
