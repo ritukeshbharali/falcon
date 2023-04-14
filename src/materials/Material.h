@@ -29,9 +29,9 @@ using jive::util::XTable;
  *  The Material class is the base class, providing common functionalities
  *  for modelling different types of materials. 
  * 
- *  Derived classes are expected to provide implementation for the 'update'
- *  and 'clone' functions. Material class is derived from base class Object,
- *  which offers garbage collection. 
+ *  Derived classes are expected to provide implementation for the 'update',
+ *  'updateConfig' and 'clone' functions. Material class is derived from 
+ *  base class Object, which offers garbage collection. 
  */ 
 
 class Material : public Object
@@ -52,22 +52,14 @@ class Material : public Object
     ( const Properties&    conf,
       const Properties&    globdat ) const;
 
+  virtual void           updateConfig () = 0;  
+
   virtual void           update
 
     ( Vector&              stress,
       Matrix&              stiff,
       const Vector&        strain,
       const idx_t          ipoint ) = 0;
-
-  virtual void           getHistory
-
-    ( Vector&              hvals,
-      const idx_t          mpoint );
-
-  virtual void           setHistory
-
-    ( const Vector&        hvals,
-      const idx_t          mpoint );
 
   virtual void           allocPoints
 
@@ -101,17 +93,68 @@ class Material : public Object
 
   virtual Ref<Material>   clone ( ) const = 0;
 
+  //  Getters (provides read-only/copy access private/protected members of the class)
+
+  virtual void           getHistory
+
+    ( Vector&              hvals,
+      const idx_t          mpoint );
+
+  inline double           getYoung   () const;
+  inline double           getPoisson () const;
+
+  //  Setters (modify private/protected members of the class)  
+
+  virtual void           setHistory
+
+    ( const Vector&        hvals,
+      const idx_t          mpoint );
+
+  inline void             setYoung   ( double young   );
+  inline void             setPoisson ( double poisson );  
+
  protected:
 
                        ~Material ();
 
   int                  rank_;
+  double               young_;
+  double               poisson_;
 
   bool                 desperateMode_;
   BoolVector           hasSwitched_;
   BoolVector           useSecant_;
   
 };
+
+//=======================================================================
+//   GETTERS
+//=======================================================================
+
+//-----------------------------------------------------------------------
+//   getYoung
+//-----------------------------------------------------------------------
+
+inline double Material::getYoung  () const
+{
+  return young_;
+}
+
+//-----------------------------------------------------------------------
+//   getPoisson
+//-----------------------------------------------------------------------
+
+inline double Material::getPoisson() const
+{
+  return poisson_;
+}
+
+//=======================================================================
+//   SETTERS
+//=======================================================================
+
+inline void Material::setYoung   ( double young   ) { young_   = young;   }
+inline void Material::setPoisson ( double poisson ) { poisson_ = poisson; }
 
 //-----------------------------------------------------------------------
 //   newMaterial
