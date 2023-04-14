@@ -37,6 +37,7 @@
 /* Include Falcon models */
 
 #include "constraints/FalconConstraintModels.h"   // Constraints
+#include "fem/basic/FalconBasicModels.h"          // Basic
 #include "fem/solidmech/FalconSolidMechModels.h"  // Solid Mechanics
 #include "fem/poromech/FalconPoroMechModels.h"    // Poro Mechanics
 #include "io/models/FalconIOModels.h"             // Input-Output
@@ -102,6 +103,7 @@ Ref<Module> mainModule ()
   /* Declare Falcon Models */
 
   declareFalconConstraintModels   ();
+  declareFalconBasicModels        ();
   declareFalconSolidMechModels    ();
   declareFalconPoroMechModels     ();
   declareFalconIOModels           ();
