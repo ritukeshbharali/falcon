@@ -1,4 +1,11 @@
-/* ut03: Linear Elasticity, Dirichlet, Newton-Raphson, Pardiso */
+/* 
+  sm03    : 2D square 
+  FE model: Linear Elasticity
+  Material: Hooke
+  Loading : Dirichlet
+  Implicit: Nonlin
+  Solver  : Intel Pardiso
+*/
 
 log =
 {

@@ -1,5 +1,10 @@
 #!/bin/bash
 
+echo "******************************"  | tee    tests.log
+echo "   Running tests for falcon"     | tee -a tests.log
+echo "******************************"  | tee -a tests.log
+echo " "                               | tee -a tests.log
+
 VAR1="Elapsed"
 num=$(find . -mindepth 1 -type d | wc -l)
 i=0
@@ -9,33 +14,33 @@ faild=0
 for d in */ ; do
     cd $d
     i=$((i+1))
-    echo "******************************************************* "
-    echo " Running problem $i of $num"
-    echo " $(head -n 1 problem.pro)"
-    echo "******************************************************* "
+    echo "------------------------------------------------------- " | tee -a ../tests.log
+    echo " Running problem $i of $num"                              | tee -a ../tests.log
+    echo " "                                                        | tee -a ../tests.log
+    echo " $(sed -n '2,7p' < problem.pro)"                          | tee -a ../tests.log
+    echo " "                                                        | tee -a ../tests.log    
+    
     ../../build/falcon-opt problem.pro
     line=($(tail -n -2 problem.log))
     line1=($(tail -n -4 problem.log))
     
     if [ "$line" = "$VAR1"  ] || [ "$line1" = "$VAR1"  ]; then
     	passd=$((passd+1))
-    	echo "*-----------------------------------------------------* "
-    	echo "                       Passed                           "
-    	echo "*-----------------------------------------------------* "
-    	echo " "
+    	echo " STATUS: Passed                           " | tee -a ../tests.log
+    	echo " "                                          | tee -a ../tests.log
     else
     	faild=$((faild+1))
-    	echo "*-----------------------------------------------------* "
-    	echo "                       Failed                           "
-    	echo "*-----------------------------------------------------* "
+    	echo " STATUS: Failed                           " | tee -a ../tests.log
     	echo " "
     fi
 
     cd ..
 done
 
-echo "******************************************************* "
-echo " Ran    $i of $num problems"
-echo " Passed $passd "
-echo " Failed $faild "
-echo "******************************************************* "
+echo " "                                                        | tee -a ./tests.log    
+echo "******************************************************* " | tee -a ./tests.log
+echo " SUMMARY:  "                                              | tee -a ./tests.log
+echo " Ran    $i of $num problems"                              | tee -a ./tests.log
+echo " Passed $passd "                                          | tee -a ./tests.log
+echo " Failed $faild "                                          | tee -a ./tests.log
+echo "******************************************************* " | tee -a ./tests.log

@@ -1,16 +1,14 @@
-/* ut02: Linear Elasticity, Dirichlet, Newton-Raphson, Umfpack */
-
 log =
 {
-  pattern = "*.debug";
-  file    = "$(CASE_NAME).log";
+  pattern = "*.info";
+  file    = "-$(CASE_NAME).log";
 };
 
 control = 
 {
   fgMode   = false;
   pause    = 0.;
-  runWhile = "i < 2";
+  runWhile = "i < 1000";
 };
 
 input =
@@ -25,78 +23,83 @@ model = "Matrix"
 
   model       =  "Multi"
   {
-    models = [ "bulk",  "force", "lodi"];
+    models = [ "bulk",  "force"];
 
-    bulk = "LinearElasticity"
+    bulk = "SaturatedPoro"
     {
       elements = "DomainElems";
 
       shape =
       {
-        type      = "Triangle3";
-        intScheme = "Gauss1";
+        type      = "Quad8";
+        intScheme = "Gauss2*Gauss2";
       };
       
       material =
       {
         type   = "Hooke";
         rank   = 2;
-        state  = "PLANE_STRESS";
+        state  = "PLANE_STRAIN";
 
-        young    = 1.e+4;
-        poisson  = 0.3;
+        young    = 1.0e+08;
+        poisson  = 0.0;
+        rho      = 1.0;
       };
 
+      intrin_perm   = 1.0e-14;
+      fluid_visc    = 0.0089;
+      solid_stiff   = 1.0e+10;
+      fluid_stiff   = 2.0e+09;
+      porosity      = 0.375;
+      biot_coeff    = 1.0;
+      dtime         = 9.1225;
     };
+    
 
-    force = 
+    force =  "LoadScale"
     {
-      type       = "Dirichlet";
-      nodeGroups = "TopNodes";
-      dofs       = "dy";
-      factors    = [ 1.0];
-      stepSize   = 0.0001;
+       // time in seconds
+       //scaleFunc = "exp(-time/1e-4)";
 
-    };
-
-    lodi =
-    {
-      type   = "Lodi";
-      group  = "TopNodes";
-    };    
+       model =
+       {
+         type     = "Neumann";
+         elements = "TopElems";
+         loads    = [0.0,-1.0e+04,0.0];
+         shape  =
+          {
+            type  = "BLine3";
+            shapeFuncs  =
+            {
+              type  = "Quadratic";
+            };
+            intScheme = "Gauss2";
+          };
+       };
+    };  
 
   };
 };
 
 extraModules =
 {
-  modules = ["solver","graph","view","vtk"];
-   
+  modules = ["solver","view","vtk"];
+  
   solver = 
   {
-      type = "Nonlin";
-    
-      precision = 1.0e-6;
-    
+      type      = "Nonlin";
+      precision = 1.0e-6;    
       maxIter   = 100;
-  
+
       solver =
-      {
-        type = "Umfpack";
+      { 
+        type = "Pardiso";
+        lenient = true;
+        numThreads  = 4;
+        msglvl = 0;
+        sortColumns = 1;
       };
   };
-
-  graph =
-  {
-      type = "Graph";
-      dataSets = "loadDisp";
-      loadDisp =
-      {
-        key = "Load-displacement curve";
-        xData = "model.model.lodi.disp[1]";
-        yData = "model.model.lodi.load[1]";
-      };
-   };
 
   // FemViewModule, provides a visiualisation of the mesh during simulation. 
   view = "FemView"
@@ -127,7 +130,7 @@ extraModules =
       {
         // Use the solution as the z-displacement.
         autoScale=false;
-        scale = 0.1;
+        scale = 0.001;
         dy = "state[dy]";
         dx = "state[dx]";
       };
@@ -139,7 +142,7 @@ extraModules =
       colors =
       {
         type = "MeshColorView";
-        data = "state[dy]";
+        data = "state[dp]";
       };
     };
     
@@ -151,7 +154,7 @@ extraModules =
     {
        fileName   = "$(CASE_NAME)_out";
        elements = "DomainElems";
-       interval = 1;
+       interval = 100;
        data     = ["stress"];
        dataType = "nodes";
 
