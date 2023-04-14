@@ -38,12 +38,13 @@
 
 #include "constraints/FalconConstraintModels.h"   // Constraints
 #include "fem/solidmech/FalconSolidMechModels.h"  // Solid Mechanics
+#include "fem/poromech/FalconPoroMechModels.h"    // Poro Mechanics
 #include "io/models/FalconIOModels.h"             // Input-Output
 
 /* Include Falcon modules */
 
 #include "io/modules/FalconIOModules.h"           // Input-Output
-#include "steppers/FalconStepperModules.h"         // Steppers
+#include "steppers/FalconStepperModules.h"        // Steppers
 
 
 using namespace jem;
@@ -102,6 +103,7 @@ Ref<Module> mainModule ()
 
   declareFalconConstraintModels   ();
   declareFalconSolidMechModels    ();
+  declareFalconPoroMechModels     ();
   declareFalconIOModels           ();
 
   /* Declare Falcon Modules */
