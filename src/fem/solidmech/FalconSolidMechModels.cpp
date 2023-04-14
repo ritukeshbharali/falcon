@@ -7,10 +7,13 @@
 //-----------------------------------------------------------------------
 
 
-void declareFalconSolidMechModels ()
+void declareFalconSolidMechModels      ()
 {
   
-  declareLinearElasticityModel    ();
-  declarePhaseFractureExtModel    ();
+  declareLinearElasticityModel         ();
+  declarePhaseFractureModel            ();
+  declarePhaseFractureExtModel         ();
+  declareMicroPhaseFractureModel       ();
+  declareMicroPhaseFractureExtModel    ();
 
 }

@@ -1,28 +1,20 @@
 
-/** @file PhaseFractureExtModel.cpp
- *  @brief Implements a extrapolation-based convexified phase-field 
- *         fracture model.
+/** @file MicroPhaseFractureExtModel.cpp
+ *  @brief Implements the micromorphic phase-field fracture
+ *         model with extrapolation.
  *  
  *  This class implements the unified phase-field fracture
  *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
- *  irreversibility is enforced using the penalization 
- *  approach (see DOI: 10.1016/j.cma.2019.05.038). The
- *  fracture driving and resisting energies are obtained
- *  using Amor split (see DOI: 10.1016/j.jmps.2009.04.011).
- *  Convexification is carried out based on extrapolation
- *  of the phase-field for the momentum balance equation
- *  (see DOI: 10.1016/j.cma.2015.03.009).
+ *  irreversibility is enforced using the history variable
+ *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
- *  Date: 30 March 2022
- * 
- *  @note This model must be run with ReduceStepping
- *        Module.
- *  
+ *  Date: 14 June 2022  
+ *
  *  Updates (when, what and who)
- *     - [14 June 2022], added getIntForce_ and removed
- *       getHistory_. getIntForce_ is required for line
- *       search operations. (RB)
+ *     - [06 August 2022] replaced hard-coded Amor phase
+ *       field model with generic material update to
+ *       different phase-field material models. (RB)
  */
 
 /* Include jem and jive headers */
@@ -30,11 +22,12 @@
 #include <jem/base/Error.h>
 #include <jem/base/IllegalInputException.h>
 #include <jive/model/Actions.h>
+#include <jive/implict/ArclenActions.h>
 
 /* Include other headers */
 
 #include "FalconSolidMechModels.h"
-#include "PhaseFractureExtModel.h"
+#include "MicroPhaseFractureExtModel.h"
 #include "util/TbFiller.h"
 #include "util/XNames.h"
 
@@ -43,7 +36,7 @@
 
 
 //=======================================================================
-//   class PhaseFractureExtModel
+//   class MicroPhaseFractureExtModel
 //=======================================================================
 
 //-----------------------------------------------------------------------
@@ -51,25 +44,25 @@
 //-----------------------------------------------------------------------
 
 
-const char*  PhaseFractureExtModel::DISP_NAMES[3]         = { "dx", "dy", "dz" };
-const char*  PhaseFractureExtModel::SHAPE_PROP            = "shape";
-const char*  PhaseFractureExtModel::MATERIAL_PROP         = "material";
-const char*  PhaseFractureExtModel::RHO_PROP              = "rho";
+const char*  MicroPhaseFractureExtModel::DISP_NAMES[3]         = { "dx", "dy", "dz" };
+const char*  MicroPhaseFractureExtModel::SHAPE_PROP            = "shape";
+const char*  MicroPhaseFractureExtModel::MATERIAL_PROP         = "material";
+const char*  MicroPhaseFractureExtModel::RHO_PROP              = "rho";
 
-const char*  PhaseFractureExtModel::FRACTURE_TYPE_PROP    = "fractureType";
-const char*  PhaseFractureExtModel::GRIFFITH_ENERGY_PROP  = "griffithEnergy";
-const char*  PhaseFractureExtModel::LENGTH_SCALE_PROP     = "lengthScale";
-const char*  PhaseFractureExtModel::TENSILE_STRENGTH_PROP = "tensileStrength";
-const char*  PhaseFractureExtModel::PENALTY_PROP          = "penalty";
+const char*  MicroPhaseFractureExtModel::FRACTURE_TYPE_PROP    = "fractureType";
+const char*  MicroPhaseFractureExtModel::GRIFFITH_ENERGY_PROP  = "griffithEnergy";
+const char*  MicroPhaseFractureExtModel::LENGTH_SCALE_PROP     = "lengthScale";
+const char*  MicroPhaseFractureExtModel::TENSILE_STRENGTH_PROP = "tensileStrength";
+const char*  MicroPhaseFractureExtModel::PENALTY_PROP          = "penalty";
 
-const char*  PhaseFractureExtModel::BRITTLE_AT1           = "at1";
-const char*  PhaseFractureExtModel::BRITTLE_AT2           = "at2";
-const char*  PhaseFractureExtModel::LINEAR_CZM            = "czmLinear";
-const char*  PhaseFractureExtModel::EXPONENTIAL_CZM       = "czmExponential";
-const char*  PhaseFractureExtModel::CORNELISSEN_CZM       = "czmCornelissen";
-const char*  PhaseFractureExtModel::HYPERBOLIC_CZM        = "czmHyperbolic";
+const char*  MicroPhaseFractureExtModel::BRITTLE_AT1           = "at1";
+const char*  MicroPhaseFractureExtModel::BRITTLE_AT2           = "at2";
+const char*  MicroPhaseFractureExtModel::LINEAR_CZM            = "czmLinear";
+const char*  MicroPhaseFractureExtModel::EXPONENTIAL_CZM       = "czmExponential";
+const char*  MicroPhaseFractureExtModel::CORNELISSEN_CZM       = "czmCornelissen";
+const char*  MicroPhaseFractureExtModel::HYPERBOLIC_CZM        = "czmHyperbolic";
 
-vector<String> PhaseFractureExtModel::fractureModels (6);
+vector<String> MicroPhaseFractureExtModel::fractureModels (6);
 
 
 //-----------------------------------------------------------------------
@@ -77,7 +70,7 @@ vector<String> PhaseFractureExtModel::fractureModels (6);
 //-----------------------------------------------------------------------
 
 
-PhaseFractureExtModel::PhaseFractureExtModel
+MicroPhaseFractureExtModel::MicroPhaseFractureExtModel
 
   ( const String&      name,
     const Properties&  conf,
@@ -205,9 +198,7 @@ PhaseFractureExtModel::PhaseFractureExtModel
   isActive_.resize ( ielemCount );
   isActive_ = 1;
 
-  /*
-   *  Setup the fracture models
-   */
+  // Setup the fracture models
 
   fractureModels[0]     = BRITTLE_AT1;
   fractureModels[1]     = BRITTLE_AT2;
@@ -253,13 +244,13 @@ PhaseFractureExtModel::PhaseFractureExtModel
   beta_         = 6500.0;
   myProps.find ( beta_, PENALTY_PROP );
   myConf. set  ( PENALTY_PROP, beta_ );
-
-  dt_          = 0.0;
-  dt0_         = 0.0;
+  
+  preHist_.phasef_.resize ( ipCount );
+  newHist_.phasef_.resize ( ipCount );
 }
 
 
-PhaseFractureExtModel::~PhaseFractureExtModel ()
+MicroPhaseFractureExtModel::~MicroPhaseFractureExtModel ()
 {}
 
 
@@ -268,7 +259,7 @@ PhaseFractureExtModel::~PhaseFractureExtModel ()
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::configure
+void MicroPhaseFractureExtModel::configure
 
   ( const Properties&  props,
     const Properties&  globdat )
@@ -345,6 +336,11 @@ void PhaseFractureExtModel::configure
     a3_    = 0.0;
     Psi0_  = 0.5 * (sigmaT_ * sigmaT_)/E;
   }
+
+  // Setup history variables
+
+  preHist_.phasef_  = 0.0;
+  newHist_.phasef_  = 0.0;
 }
 
 
@@ -353,7 +349,7 @@ void PhaseFractureExtModel::configure
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getConfig ( const Properties& conf,
+void MicroPhaseFractureExtModel::getConfig ( const Properties& conf,
                                       const Properties&  globdat )  const
 {
   Properties  myConf  = conf  .makeProps ( myName_ );
@@ -368,7 +364,7 @@ void PhaseFractureExtModel::getConfig ( const Properties& conf,
 //-----------------------------------------------------------------------
 
 
-bool PhaseFractureExtModel::takeAction
+bool MicroPhaseFractureExtModel::takeAction
 
   ( const String&      action,
     const Properties&  params,
@@ -383,7 +379,6 @@ bool PhaseFractureExtModel::takeAction
 
   if ( action == Actions::GET_INT_VECTOR )
   {
-
     Vector  state;
     Vector  state0;
     Vector  state00;
@@ -415,7 +410,7 @@ bool PhaseFractureExtModel::takeAction
     Vector  state00;
     Vector  force; 
 
-    // Get the current and old step displacements.
+    // Get the current and old step states.
 
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
@@ -451,7 +446,7 @@ bool PhaseFractureExtModel::takeAction
 
   if ( action == Actions::COMMIT )
   {
-    // material_->commit (); // not required for linear elastic material
+    newHist_.phasef_. swap ( preHist_.phasef_ );
 
     return true;
   }
@@ -474,7 +469,6 @@ bool PhaseFractureExtModel::takeAction
     return getTable_ ( params, globdat );
   }
 
-
   if ( action == XActions::SET_STEP_SIZE )
   {
     setStepSize_ ( params );
@@ -489,7 +483,7 @@ bool PhaseFractureExtModel::takeAction
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getIntForce_
+void MicroPhaseFractureExtModel::getIntForce_
 
   ( const Vector&   force,
     const Vector&   state,
@@ -497,6 +491,7 @@ void PhaseFractureExtModel::getIntForce_
     const Vector&   state00 )
 
 {
+
   IdxVector   ielems     = egroup_.getIndices ();
 
   const int   ielemCount = ielems.size         ();
@@ -504,7 +499,7 @@ void PhaseFractureExtModel::getIntForce_
   const int   ipCount    = shape_->ipointCount ();
   const int   strCount   = STRAIN_COUNTS[rank_];
 
-  // number of displacement and phase-field dofs
+  // number of displacement and micromorphic variable dofs
 
   const int   dispCount  = nodeCount * rank_;  
   const int   phiCount   = nodeCount;
@@ -513,30 +508,33 @@ void PhaseFractureExtModel::getIntForce_
   Matrix      coords     ( rank_, nodeCount );
 
   // current element vector state:
-  // displacement and phase-field
+  // displacement and micromorphic variable
   
   Vector      disp       ( dispCount );
   Vector      phi        ( phiCount );
 
   // old step element vector state:
-  // phase-field
+  // micromorphic variable
   
   Vector      phi0       ( phiCount );
 
   // old old step element vector state:
-  // phase-field
+  // micromorphic variable
   
   Vector      phi00       ( phiCount );
 
   // current
 
   Matrix      stiff      ( strCount, strCount );
+  Matrix      stiffP     ( strCount, strCount );
+  Matrix      stiffN     ( strCount, strCount );
   Vector      stress     ( strCount );
   Vector      strain     ( strCount );
   Vector      stressP    ( strCount );
+  Vector      stressN    ( strCount );
 
   // internal force vector:
-  // displacement and phase-field
+  // displacement and micromorphic variable
 
   Vector      elemForce1 ( dispCount );
   Vector      elemForce2 ( phiCount  );
@@ -563,8 +561,10 @@ void PhaseFractureExtModel::getIntForce_
   
   double      wip;
 
-  double      gphiEx;
-  double      dgphi;
+  double      gphi;
+  Vector      dphidStrain ( strCount );
+
+  const double alpha   = beta_ * gc_/l0_;
 
   // Iterate over all elements assigned to this model.
 
@@ -596,12 +596,12 @@ void PhaseFractureExtModel::getIntForce_
 
     Matrix N  = shape_->getShapeFunctions ();
     
-    // Get current element displacements and phase-fields
+    // Get current element displacements and micromorphic variables
 
     phi   = select ( state, phiDofs  );
     disp  = select ( state, dispDofs );
 
-    // Get old step and old old step element phase-field
+    // Get old step and old old step element micromorphic variable
 
     phi0  = select ( state0,  phiDofs );
     phi00 = select ( state00, phiDofs );
@@ -610,7 +610,7 @@ void PhaseFractureExtModel::getIntForce_
     // and the tangent stiffness matrix
     
     elemForce1 = 0.0;
-    elemForce2 = 0.0; 
+    elemForce2 = 0.0;    
 
     // Loop on integration points 
     
@@ -638,28 +638,18 @@ void PhaseFractureExtModel::getIntForce_
 
       strain_(slice(BEGIN,strCount),ipoint) = strain;
 
-      // Compute the integration point phase-fields (current, old, old old)
+      // Compute the integration point micromorphic variables (current, old, old old)
 
       Vector Nip           = N( ALL,ip );
 
       double pf            = dot ( Nip, phi   );
       double pf0           = dot ( Nip, phi0  );
       double pf00          = dot ( Nip, phi00 );
-      double pfEx          = 0.0;
 
-      // Linearly extrapolate old old phase-field to current step
+      // Linearly extrapolate old old micromorphic variable to current step
 
-      if (dt0_ < 1e-20 )
-      {
-        pfEx = pf0;
-      }
-      else
-      {
-        // pfEx              = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
-        // corrected Wick book
-        pfEx = - pf00 * dt_/dt0_ + pf0 * (dt_+dt0_)/dt0_;
-      }
-      
+      double pfEx          = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
+
       // Ensure extrapolated phase-field is within bounds [0,1]
 
       if ( pfEx < 0.0 )
@@ -671,61 +661,258 @@ void PhaseFractureExtModel::getIntForce_
         pfEx = 1.0;
       }
 
-      // Compute the degradation function with the extrapolated phase-field
+      // Get postive/negative stress and material tangent stiffness
 
+      phaseMaterial_-> update ( stressP, stressN, stiffP, stiffN, strain, ipoint );
+
+      double Psi  = phaseMaterial_->givePsi();
+      Psi = max(Psi,Psi0_);
+
+      // Compute local phase-field iteratively
+
+      const double d0    = preHist_.phasef_[ipoint];
+      double d           = d0;
+
+      double gphi_n      = ::pow( 1.0 - d, p_);
+      double gphi_d      = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+      double dgphi_n     = - p_ * ( ::pow( 1.0 - d, p_- 1) );
+      double dgphi_d     = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+      double ddgphi_n    = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0) );
+      double ddgphi_d    = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+      double dgphi       = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+      double ddgphi      = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
+
+      double dw          = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+      double ddw         = 2.0 * ( 1.0 - eta_ );
+
+      double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
+      double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
+
+      int iter = 0;
+
+      // Carry out the iterative procedure
+
+      while ( abs(Res) > 1.e-4 )
       {
-        double gphiEx_n    = ::pow( 1- pfEx, p_);
-        double gphiEx_d    = gphiEx_n + a1_*pfEx + a1_*a2_*pfEx*pfEx + 
-                             a1_*a2_*a3_*pfEx*pfEx*pfEx;
-        gphiEx             = gphiEx_n/gphiEx_d + 1.e-7;
+
+        // Increase iteration counter 
+        iter   += 1;        
+        
+        // Update local phase-field
+        d      -= Res/J;
+
+        // Compute required quantities
+
+        gphi_n    = ::pow( 1.0 - d, p_);
+        gphi_d    = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0) );
+        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+        ddgphi_n  = p_ * (p_ - 1.0) * ( ::pow( 1.0- d, p_- 2.0) );
+        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+        // double gphi      = gphi_n/gphi_d;
+        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
+
+        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        ddw       = 2.0 * ( 1.0 - eta_ );
+
+        // Compute new residual and Jacobian
+        
+        Res       = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
+        J         = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
 
       }
 
-      strain_(strCount,ipoint) = gphiEx;
+      // Ensure extrapolated phase-field is within bounds [0,1]
 
-      // Compute the degradation function derivatives with the current phase-field
-
+      if ( d < 0.0 )
       {
-        double gphi_n    = ::pow( 1- pf, p_);
-        double gphi_d    = gphi_n + a1_*pf + a1_*a2_*pf*pf + a1_*a2_*a3_*pf*pf*pf;
-
-        double dgphi_n   = - p_ * ( ::pow( 1- pf, p_- 1) );
-        double dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*pf + 3.0*a1_*a2_*a3_*pf*pf;
-
-        dgphi            = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+        d = 0.0;
+      }
+      else if ( d > 1.0 )
+      {
+        d = 1.0;
       }
 
-      // Compute the locally dissipated fracture energy function derivative
+      // Check if fracture is loading
 
-      double dw        = eta_ + 2.0 * ( 1- eta_ ) * pf;
+      if ( d - d0 > 1.e-100  )
+      {
 
-      // Compute stress and material tangent stiffness
+        // Compute the required quantities
 
-      phaseMaterial_->update ( stress, stiff, strain, gphiEx, ipoint );
+        gphi_n  = ::pow( 1.0 - d, p_);
+        gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
 
-      // Get fracture driving energy
+        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0 ) );
+        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
 
-      double Psi = phaseMaterial_->givePsi();
-      Psi        = max(Psi,Psi0_);
+        ddgphi_n  = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0 ) );
+        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
 
-      // Compute stiffness matrix components
+        // double gphi      = gphi_n/gphi_d;
+        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
 
-      wip         = ipWeights[ip];
-     
+        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        ddw       = 2.0 * ( 1.0 - eta_ );
+
+        // Compute the degradation function derivatives with the current phase-field
+
+        dphidStrain = -( dgphi )/( ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha ) * stressP;
+      }
+      else 
+      {
+        d           = d0;
+        dphidStrain = 0.0;
+
+        gphi_n  = ::pow( 1.0 - d, p_);
+        gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+      }
+
+      newHist_.phasef_[ipoint] = d;
+
+      // Compute the degradation function
+
+      gphi = gphi_n/gphi_d + 1.e-10;
+
+      strain_(strCount,ipoint) = gphi;   
+
+      // Compute material tangent and stress
+
+      stiff  = gphi * stiffP  + stiffN;
+      stress = gphi * stressP + stressN;
+
+      // Compute non-extrapolated phase-field (required for second equation!)
+
+      // d           = d0;
+
+      gphi_n      = ::pow( 1.0 - d, p_);
+      gphi_d      = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+      dgphi_n     = - p_ * ( ::pow( 1.0 - d, p_- 1) );
+      dgphi_d     = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+      ddgphi_n    = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0) );
+      ddgphi_d    = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+      dgphi       = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+      ddgphi      = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / 
+                           ( gphi_d * gphi_d * gphi_d );  
+
+      dw          = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+      ddw         = 2.0 * ( 1.0 - eta_ );
+
+      Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
+      J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
+   
+      iter = 0;
+
+      // Carry out the iterative procedure
+
+      while ( abs(Res) > 1.e-4 )
+      {
+
+        // Increase iteration counter 
+        iter   += 1;        
+        
+        // Update local phase-field
+        d      -= Res/J;
+
+        // Compute required quantities
+
+        gphi_n    = ::pow( 1.0 - d, p_);
+        gphi_d    = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0) );
+        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+        ddgphi_n  = p_ * (p_ - 1.0) * ( ::pow( 1.0- d, p_- 2.0) );
+        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+        // double gphi      = gphi_n/gphi_d;
+        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                    ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / 
+                    ( gphi_d * gphi_d * gphi_d );  
+
+        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        ddw       = 2.0 * ( 1.0 - eta_ );
+
+        // Compute new residual and Jacobian
+        
+        Res       = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
+        J         = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
+
+      }
+
+      // Check if fracture is loading
+
+      if ( d - d0 > 1.e-100  )
+      {
+
+        // Compute the required quantities
+
+        gphi_n  = ::pow( 1.0 - d, p_);
+        gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0 ) );
+        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+        ddgphi_n  = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0 ) );
+        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+        // double gphi      = gphi_n/gphi_d;
+        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
+
+        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        ddw       = 2.0 * ( 1.0 - eta_ );
+
+        // Compute the degradation function derivatives with the current phase-field
+
+        dphidStrain = -( dgphi )/( ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha ) * stressP;
+      }
+      else if ( d < 0.0 )
+      {
+        d = 0.0;
+        dphidStrain = 0.0;
+      }
+      else if ( d > 1.0 )
+      {
+        d = 1.0;
+      }
+      else 
+      {
+        d           = d0;
+        dphidStrain = 0.0;
+      }
+
+      newHist_.phasef_[ipoint] = d;
+
       // Compute internal forces
 
+      wip         = ipWeights[ip];
       elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
-      elemForce2 +=  wip * ( Nip * ( gc_/(cw_*l0_) * dw + dgphi * Psi) 
-                     + (2.0 * gc_*l0_/cw_) 
-                     * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );
-
-      // Penalization (enforce fracture irreversibility) 
-
-      if ( pf0 - pf > 1.e-15 )
-      {
-        double Dpf = pf0 - pf;
-        elemForce2 -= wip * ( gc_/(cw_*l0_) * beta_ * Dpf ) * Nip;
-      }   
+      elemForce2 +=  wip * ( alpha * ( pf - d ) *  Nip + (2.0 * gc_*l0_/cw_) * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );  
 
     }  // End of loop on integration points
 
@@ -742,7 +929,7 @@ void PhaseFractureExtModel::getIntForce_
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getMatrix_
+void MicroPhaseFractureExtModel::getMatrix_
 
   ( MatrixBuilder&  mbuilder,
     const Vector&   force,
@@ -751,6 +938,7 @@ void PhaseFractureExtModel::getMatrix_
     const Vector&   state00 )
 
 {
+
   IdxVector   ielems     = egroup_.getIndices ();
 
   const int   ielemCount = ielems.size         ();
@@ -758,7 +946,7 @@ void PhaseFractureExtModel::getMatrix_
   const int   ipCount    = shape_->ipointCount ();
   const int   strCount   = STRAIN_COUNTS[rank_];
 
-  // number of displacement and phase-field dofs
+  // number of displacement and micromorphic variable dofs
 
   const int   dispCount  = nodeCount * rank_;  
   const int   phiCount   = nodeCount;
@@ -767,30 +955,33 @@ void PhaseFractureExtModel::getMatrix_
   Matrix      coords     ( rank_, nodeCount );
 
   // current element vector state:
-  // displacement and phase-field
+  // displacement and micromorphic variable
   
   Vector      disp       ( dispCount );
   Vector      phi        ( phiCount );
 
   // old step element vector state:
-  // phase-field
+  // micromorphic variable
   
   Vector      phi0       ( phiCount );
 
   // old old step element vector state:
-  // phase-field
+  // micromorphic variable
   
   Vector      phi00       ( phiCount );
 
   // current
 
   Matrix      stiff      ( strCount, strCount );
+  Matrix      stiffP     ( strCount, strCount );
+  Matrix      stiffN     ( strCount, strCount );
   Vector      stress     ( strCount );
-  Vector      strain     ( strCount );
   Vector      stressP    ( strCount );
+  Vector      stressN    ( strCount );
+  Vector      strain     ( strCount );
 
   // internal force vector:
-  // displacement and phase-field
+  // displacement and micromorphic variable
 
   Vector      elemForce1 ( dispCount );
   Vector      elemForce2 ( phiCount  );
@@ -824,9 +1015,10 @@ void PhaseFractureExtModel::getMatrix_
   
   double      wip;
 
-  double      gphiEx;
-  double      dgphi;
-  double      ddgphi;
+  double      gphi;
+  Vector      dphidStrain ( strCount );
+
+  const double alpha   = beta_ * gc_/l0_;
 
   // Iterate over all elements assigned to this model.
 
@@ -858,12 +1050,12 @@ void PhaseFractureExtModel::getMatrix_
 
     Matrix N  = shape_->getShapeFunctions ();
     
-    // Get current element displacements and phase-fields
+    // Get current element displacements and micromorphic variables
 
     phi   = select ( state, phiDofs  );
     disp  = select ( state, dispDofs );
 
-    // Get old step and old old step element phase-field
+    // Get old step and old old step element micromorphic variable
 
     phi0  = select ( state0,  phiDofs );
     phi00 = select ( state00, phiDofs );
@@ -877,7 +1069,7 @@ void PhaseFractureExtModel::getMatrix_
     elemMat1   = 0.0;
     elemMat2   = 0.0;
     elemMat3   = 0.0;
-    elemMat4   = 0.0;  
+    elemMat4   = 0.0;    
 
     // Loop on integration points 
     
@@ -905,29 +1097,19 @@ void PhaseFractureExtModel::getMatrix_
 
       strain_(slice(BEGIN,strCount),ipoint) = strain;
 
-      // Compute the integration point phase-fields (current, old, old old)
+      // Compute the integration point micromorphic variables (current, old, old old)
 
       Vector Nip           = N( ALL,ip );
 
       double pf            = dot ( Nip, phi   );
       double pf0           = dot ( Nip, phi0  );
       double pf00          = dot ( Nip, phi00 );
-      double pfEx          = 0.0;
 
-      // Linearly extrapolate old old phase-field to current step
+      // Linearly extrapolate old old micromorphic variable to current step
 
-      if (dt0_ < 1e-20 )
-      {
-        pfEx = pf0;
-      }
-      else
-      {
-        // pfEx              = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
-        // corrected Wick book
-        pfEx = - pf00 * dt_/dt0_ + pf0 * (dt_+dt0_)/dt0_;
-      }
-      
-      // Ensure extrapolated phase-field is within bounds [0,1]
+      double pfEx          = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
+
+      // Ensure extrapolated micromorphic phase-field is within bounds [0,1]
 
       if ( pfEx < 0.0 )
       {
@@ -938,75 +1120,236 @@ void PhaseFractureExtModel::getMatrix_
         pfEx = 1.0;
       }
 
-      // Compute the degradation function with the extrapolated phase-field
+      // Get positive/negative stress and material tangent stiffness
 
+      phaseMaterial_-> update ( stressP, stressN, stiffP, stiffN, strain, ipoint );
+
+      double Psi  = phaseMaterial_->givePsi();
+      Psi = max(Psi,Psi0_);
+
+      // Compute local phase-field (d) iteratively via extrapolation
+
+      const double d0    = preHist_.phasef_[ipoint];
+      double d           = d0;
+
+      double gphi_n      = ::pow( 1.0 - d, p_);
+      double gphi_d      = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+      double dgphi_n     = - p_ * ( ::pow( 1.0 - d, p_- 1) );
+      double dgphi_d     = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+      double ddgphi_n    = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0) );
+      double ddgphi_d    = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+      double dgphi       = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+      double ddgphi      = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
+
+      double dw          = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+      double ddw         = 2.0 * ( 1.0 - eta_ );
+
+      double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
+      double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
+
+      int iter = 0;
+
+      // Carry out the iterative procedure
+
+      while ( abs(Res) > 1.e-4 )
       {
-        double gphiEx_n    = ::pow( 1- pfEx, p_);
-        double gphiEx_d    = gphiEx_n + a1_*pfEx + a1_*a2_*pfEx*pfEx + 
-                             a1_*a2_*a3_*pfEx*pfEx*pfEx;
-        gphiEx             = gphiEx_n/gphiEx_d + 1.e-7;
+
+        // Increase iteration counter 
+        iter   += 1;        
+        
+        // Update local phase-field
+        d      -= Res/J;
+
+        // Compute required quantities
+
+        gphi_n    = ::pow( 1.0 - d, p_);
+        gphi_d    = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0) );
+        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+        ddgphi_n  = p_ * (p_ - 1.0) * ( ::pow( 1.0- d, p_- 2.0) );
+        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+        // double gphi      = gphi_n/gphi_d;
+        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
+
+        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        ddw       = 2.0 * ( 1.0 - eta_ );
+
+        // Compute new residual and Jacobian
+        
+        Res       = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
+        J         = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
 
       }
 
-      strain_(strCount,ipoint) = gphiEx;
+      // Ensure extrapolated phase-field (d) is within bounds [0,1]
 
-      // Compute the degradation function derivatives with the current phase-field
-
+      if ( d < 0.0 )
       {
-        double gphi_n    = ::pow( 1- pf, p_);
-        double gphi_d    = gphi_n + a1_*pf + a1_*a2_*pf*pf + a1_*a2_*a3_*pf*pf*pf;
-
-        double dgphi_n   = - p_ * ( ::pow( 1- pf, p_- 1) );
-        double dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*pf + 3.0*a1_*a2_*a3_*pf*pf;
-
-        double ddgphi_n  = p_ * (p_ - 1) * ( ::pow( 1- pf, p_- 2) );
-        double ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*pf;
-
-        dgphi            = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
-        ddgphi           = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
-                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) 
-                         / ( gphi_d * gphi_d * gphi_d );  
+        d = 0.0;
+      }
+      else if ( d > 1.0 )
+      {
+        d = 1.0;
       }
 
-      // Compute the locally dissipated fracture energy function derivatives
+      // This d is only needed for gphiEx
 
-      double dw        = eta_ + 2.0 * ( 1- eta_ ) * pf;
-      double ddw       = 2.0 * ( 1- eta_ );
+      d       = max(d,d0);
 
-      // Compute stress and material tangent stiffness
+      gphi_n  = ::pow( 1.0 - d, p_);
+      gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+                         a1_*a2_*a3_*d*d*d;
+      gphi    = gphi_n/gphi_d + 1.e-10;
 
-      phaseMaterial_->update ( stress, stiff, strain, gphiEx, ipoint );
+      strain_(strCount,ipoint) = gphi;   
 
-      // Get fracture driving energy and its derivative
+      newHist_.phasef_[ipoint] = d; 
 
-      double Psi = phaseMaterial_->givePsi();
-      stressP    = phaseMaterial_->giveDerivPsi();
-      Psi        = max(Psi,Psi0_);
+      // Compute material tangent and stress
+
+      stiff  = gphi * stiffP  + stiffN;
+      stress = gphi * stressP + stressN;
+
+      // Compute non-extrapolated phase-field (required for second equation!)
+
+      // d           = d0;
+      gphi_n      = ::pow( 1.0 - d, p_);
+      gphi_d      = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+      dgphi_n     = - p_ * ( ::pow( 1.0 - d, p_- 1) );
+      dgphi_d     = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+      ddgphi_n    = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0) );
+      ddgphi_d    = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+      dgphi       = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+      ddgphi      = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / 
+                           ( gphi_d * gphi_d * gphi_d );  
+
+      dw          = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+      ddw         = 2.0 * ( 1.0 - eta_ );
+
+      Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
+      J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
+   
+      iter = 0;
+
+      // Carry out the iterative procedure
+
+      while ( abs(Res) > 1.e-4 )
+      {
+
+        // Increase iteration counter 
+        iter   += 1;        
+        
+        // Update local phase-field
+        d      -= Res/J;
+
+        // Compute required quantities
+
+        gphi_n    = ::pow( 1.0 - d, p_);
+        gphi_d    = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0) );
+        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+        ddgphi_n  = p_ * (p_ - 1.0) * ( ::pow( 1.0- d, p_- 2.0) );
+        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+        // double gphi      = gphi_n/gphi_d;
+        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                    ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / 
+                    ( gphi_d * gphi_d * gphi_d );  
+
+        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        ddw       = 2.0 * ( 1.0 - eta_ );
+
+        // Compute new residual and Jacobian
+        
+        Res       = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
+        J         = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
+
+      }
+
+      // Check if fracture is loading
+
+      double dphidd = 0.0;
+
+      if ( d > d0 )
+      {
+
+        // Compute the required quantities
+
+        gphi_n  = ::pow( 1.0 - d, p_);
+        gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
+
+        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0 ) );
+        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+        ddgphi_n  = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0 ) );
+        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
+
+        // double gphi      = gphi_n/gphi_d;
+        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
+                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
+
+        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        ddw       = 2.0 * ( 1.0 - eta_ );
+
+        // Compute the degradation function derivatives with the current phase-field
+
+        dphidStrain = -( dgphi )/( ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha ) * stressP;
+        dphidd      = alpha/( ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha );
+      }
+      else if ( d < 0.0 )
+      {
+        d = 0.0;
+        dphidStrain = 0.0;
+      }
+      else if ( d > 1.0 )
+      {
+        d = 1.0;
+      }
+      else 
+      {
+        d           = d0;
+        dphidStrain = 0.0;
+      }
+
+      // newHist_.phasef_[ipoint] = d; 
+
+      /*dphidd = min(dphidd,1.0);
+      dphidd = 0.0;
+      dphidStrain = 0.0;*/
 
       // Compute stiffness matrix components
 
       wip         = ipWeights[ip];
       elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
-      elemMat3   += wip * dgphi * ( matmul ( Nip, matmul(stressP, bd) ) );
-      elemMat4   += wip * ( ( gc_/(cw_*l0_) * ddw + ddgphi * Psi) 
-                    * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) 
-                    * mc2. matmul ( bet, be ) );
+      elemMat3   -= wip * alpha * ( matmul ( Nip, matmul(dphidStrain, bd) ) );
+      elemMat4   += wip * ( alpha * ( 1.0 - dphidd ) * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) * mc2. matmul ( bet, be ) );
      
       // Compute internal forces
 
       elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
-      elemForce2 +=  wip * ( Nip * ( gc_/(cw_*l0_) * dw + dgphi * Psi) 
-                     + (2.0 * gc_*l0_/cw_) 
-                     * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );
-
-      // Penalization (enforce fracture irreversibility) 
-
-      if ( pf0 - pf > 1.e-15 )
-      {
-        double Dpf = pf0 - pf;
-        elemMat4   += wip * ( gc_/(cw_*l0_) * beta_ * matmul ( Nip, Nip ) );
-        elemForce2 -= wip * ( gc_/(cw_*l0_) * beta_ * Dpf ) * Nip;
-      }   
+      elemForce2 +=  wip * ( alpha * ( pf - d ) *  Nip + (2.0 * gc_*l0_/cw_) * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );  
 
     }  // End of loop on integration points
 
@@ -1030,7 +1373,7 @@ void PhaseFractureExtModel::getMatrix_
 // compute the mass matrix 
 // current implementation: consistent mass matrix
 
-void PhaseFractureExtModel::getMatrix2_
+void MicroPhaseFractureExtModel::getMatrix2_
 
     ( MatrixBuilder&          mbuilder )
 {
@@ -1114,7 +1457,7 @@ void PhaseFractureExtModel::getMatrix2_
 //-----------------------------------------------------------------------
 
 
-void  PhaseFractureExtModel::initializeIPMPMap_ ( )
+void  MicroPhaseFractureExtModel::initializeIPMPMap_ ( )
 
 {
   jive::IdxVector   ielems     = egroup_.getIndices  ();
@@ -1145,7 +1488,7 @@ void  PhaseFractureExtModel::initializeIPMPMap_ ( )
 //-----------------------------------------------------------------------
 
 
-bool PhaseFractureExtModel::getTable_
+bool MicroPhaseFractureExtModel::getTable_
 
   ( const Properties&  params,
     const Properties&  globdat )
@@ -1171,7 +1514,6 @@ bool PhaseFractureExtModel::getTable_
   if ( name == "stress" && 
        table->getRowItems() == nodes_.getData() )
   {
-
     getStress_ ( *table, weights);
 
     return true;
@@ -1181,8 +1523,16 @@ bool PhaseFractureExtModel::getTable_
   if ( name == "strain" && 
        table->getRowItems() == nodes_.getData() )
   {
-
     getStrain_ ( *table, weights);
+
+    return true;
+  }
+
+  // Element phase-field
+  if ( name == "pf" && 
+       table->getRowItems() == elems_.getData() )
+  {
+    getLocalPhaseField_ ( *table, weights);
 
     return true;
   }
@@ -1190,14 +1540,14 @@ bool PhaseFractureExtModel::getTable_
   // 
   if ( name == "xoutTable" )
   {
-    Vector  disp;
+    Vector  state;
     String  contents;
 
-    StateVector::get ( disp,     dofs_, globdat  );
+    StateVector::get ( state,     dofs_, globdat  );
     params.      get ( contents, "contentString" );
 
     
-    getOutputData_ ( table, weights, contents, disp );
+    getOutputData_ ( table, weights, contents, state );
 
     return true;
   }
@@ -1211,7 +1561,7 @@ bool PhaseFractureExtModel::getTable_
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getStress_
+void MicroPhaseFractureExtModel::getStress_
 
   ( XTable&        table,
     const Vector&  weights )
@@ -1330,7 +1680,7 @@ void PhaseFractureExtModel::getStress_
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getStrain_
+void MicroPhaseFractureExtModel::getStrain_
 
   ( XTable&        table,
     const Vector&  weights )
@@ -1445,6 +1795,58 @@ void PhaseFractureExtModel::getStrain_
 
 
 //-----------------------------------------------------------------------
+//   getPhaseField_
+//-----------------------------------------------------------------------
+
+
+void MicroPhaseFractureExtModel::getLocalPhaseField_
+
+  ( XTable&        table,
+    const Vector&  weights )
+
+{
+
+  IdxVector  ielems      = egroup_.getIndices  ();
+
+  const int  ielemCount  = ielems.size         ();
+  const int  ipCount     = shape_->ipointCount ();
+
+  Matrix     elPhasef   ( ielemCount , 1 );
+
+  IdxVector  ielem      ( ielemCount );
+  IdxVector  jcols      ( 1   );
+
+  int igpoint = 0;
+
+  // Add the columns for the phase-field to the table.
+
+  jcols[0] = table.addColumn ( "pf" );
+
+  elPhasef      = 0.0;
+  ielem         = 0;
+
+  //System::out() << "Before element loop \n";
+  
+  for ( int ie = 0; ie < ielemCount; ie++ )
+  {
+    ielem[ie] = ie;
+
+    for ( int ip = 0; ip < ipCount; ip++, igpoint++ )
+    {
+      // Store Ip averaged phase-field
+
+      elPhasef(ie,0)  += preHist_.phasef_[igpoint]/ipCount;
+    }
+  }
+
+  // Add the phase-fields to the table.
+
+  table.addBlock ( ielem, jcols, elPhasef );
+
+}
+
+
+//-----------------------------------------------------------------------
 //   getOutputData_
 //-----------------------------------------------------------------------
 
@@ -1454,7 +1856,7 @@ void PhaseFractureExtModel::getStrain_
  *  components.
  */
 
-void PhaseFractureExtModel::getOutputData_
+void MicroPhaseFractureExtModel::getOutputData_
 
   ( Ref<XTable>    table,
     const Vector&  weights,
@@ -1560,7 +1962,7 @@ void PhaseFractureExtModel::getOutputData_
 //   checkCommit_
 //-----------------------------------------------------------------------
 
-void PhaseFractureExtModel::checkCommit_
+void MicroPhaseFractureExtModel::checkCommit_
 
   ( const Properties&  params )
 
@@ -1568,12 +1970,11 @@ void PhaseFractureExtModel::checkCommit_
   // System::info() << myName_ << " : check commit ... do nothing!\n";
 }
 
-
 //-----------------------------------------------------------------------
 //   setStepSize_
 //-----------------------------------------------------------------------
 
-void PhaseFractureExtModel::setStepSize_
+void MicroPhaseFractureExtModel::setStepSize_
 
   ( const Properties&  params )
 
@@ -1590,17 +1991,16 @@ void PhaseFractureExtModel::setStepSize_
   
 }
 
-
 //=======================================================================
 //   related functions
 //=======================================================================
 
 //-----------------------------------------------------------------------
-//   newPhaseFractureExtModel
+//   newMicroPhaseFractureExtModel
 //-----------------------------------------------------------------------
 
 
-static Ref<Model>     newPhaseFractureExtModel
+static Ref<Model>     newMicroPhaseFractureExtModel
 
   ( const String&       name,
     const Properties&   conf,
@@ -1608,18 +2008,18 @@ static Ref<Model>     newPhaseFractureExtModel
     const Properties&   globdat )
 
 {
-  return newInstance<PhaseFractureExtModel> ( name, conf, props, globdat );
+  return newInstance<MicroPhaseFractureExtModel> ( name, conf, props, globdat );
 }
 
 
 //-----------------------------------------------------------------------
-//   declarePhaseFractureExtModel
+//   declareMicroPhaseFractureExtModel
 //-----------------------------------------------------------------------
 
 
-void declarePhaseFractureExtModel ()
+void declareMicroPhaseFractureExtModel ()
 {
   using jive::model::ModelFactory;
 
-  ModelFactory::declare ( "PhaseFractureExt", & newPhaseFractureExtModel );
+  ModelFactory::declare ( "MicroPhaseFractureExt", & newMicroPhaseFractureExtModel );
 }

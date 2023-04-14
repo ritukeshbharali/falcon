@@ -8,10 +8,13 @@
 //-----------------------------------------------------------------------
 
 
-void  declareFalconSolidMechModels  ();
+void  declareFalconSolidMechModels       ();
 
-void  declareLinearElasticityModel  ();
-void  declarePhaseFractureExtModel  ();
+void  declareLinearElasticityModel       ();
+void  declarePhaseFractureModel          ();
+void  declarePhaseFractureExtModel       ();
+void  declareMicroPhaseFractureModel     ();
+void  declareMicroPhaseFractureExtModel  ();
 
 #endif
 
