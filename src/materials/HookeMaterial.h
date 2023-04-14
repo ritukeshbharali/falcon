@@ -45,6 +45,8 @@ class HookeMaterial : public Material
     ( const Properties&    conf,
       const Properties&    globdat )   const;
 
+  virtual void           updateConfig ();
+
   virtual void           update
 
     ( Vector&              stress,
@@ -66,16 +68,13 @@ class HookeMaterial : public Material
 
  protected:
 
-  double                  young_;
-  double                  poisson_;
   double                  area_;
   String                  stateString_;
   ProblemType             state_;
 
-private:  
+ private:  
 
   Matrix                  stiffMat_;
-
 
  protected:
 

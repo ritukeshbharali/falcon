@@ -133,6 +133,19 @@ void HookeMaterial::allocPoints
 }
 
 //-----------------------------------------------------------------------
+//  updateConfig
+//-----------------------------------------------------------------------
+
+void HookeMaterial::updateConfig ( )
+
+{
+  // updateConfig is run after the private/protected member is modified.
+  // In this case, we recompute the stiffness matrix.
+
+  computeStiffMat_ ();
+}
+
+//-----------------------------------------------------------------------
 //  update
 //-----------------------------------------------------------------------
 

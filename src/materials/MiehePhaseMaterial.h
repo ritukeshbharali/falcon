@@ -93,17 +93,10 @@ class MiehePhaseMaterial : public Material,
 
   //  Getters (provides read-only/copy access private members of the class)        
 
-  inline double           giveYoung         () const;
-  inline double           givePoisson       () const;
   inline int              giveDim           () const;
   inline ProblemType      giveState         () const;
   inline Vector           giveDerivPsi      () const;
   inline double           givePsi           () const;
-
-  //  Setters (modify private members of the class)
-
-  inline void             setYoung         ( double young   ) ;
-  inline void             setPoisson       ( double poisson ) ;
 
  protected:
 
@@ -142,24 +135,6 @@ class MiehePhaseMaterial : public Material,
   Quadix                  posProj_, negProj_, Jacobian_, I4_;
 
 };
-
-//-----------------------------------------------------------------------
-//   giveYoung
-//-----------------------------------------------------------------------
-
-inline double MiehePhaseMaterial::giveYoung  () const
-{
-  return young_;
-}
-
-//-----------------------------------------------------------------------
-//   givePoisson
-//-----------------------------------------------------------------------
-
-inline double MiehePhaseMaterial::givePoisson() const
-{
-  return poisson_;
-}
 
 //-----------------------------------------------------------------------
 //   giveDim

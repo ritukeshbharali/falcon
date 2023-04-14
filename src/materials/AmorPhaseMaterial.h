@@ -60,7 +60,7 @@ class AmorPhaseMaterial : public Material,
 
   virtual void            updateConfig (); 
 
-  virtual void           update
+  virtual void            update
 
     ( Vector&               stress,
       Matrix&               stiff,
@@ -88,17 +88,10 @@ class AmorPhaseMaterial : public Material,
 
   //  Getters (provides read-only/copy access private members of the class)  
 
-  inline double           giveYoung         () const;
-  inline double           givePoisson       () const;
   inline int              giveDim           () const;
   inline ProblemType      giveState         () const;
   inline Vector           giveDerivPsi      () const;
   inline double           givePsi           () const;
-
-  //  Setters (modify private members of the class)
-
-  inline void             setYoung         ( double young   ) ;
-  inline void             setPoisson       ( double poisson ) ;
 
  protected:
 
@@ -108,8 +101,6 @@ class AmorPhaseMaterial : public Material,
 
   // Elastic properties
 
-  double                  young_;
-  double                  poisson_;
   double                  K_;
   double                  G_;
   double                  area_;
@@ -126,24 +117,6 @@ class AmorPhaseMaterial : public Material,
   Matrix  PDev_;
 
 };
-
-//-----------------------------------------------------------------------
-//   giveYoung
-//-----------------------------------------------------------------------
-
-inline double AmorPhaseMaterial::giveYoung  () const
-{
-  return young_;
-}
-
-//-----------------------------------------------------------------------
-//   givePoisson
-//-----------------------------------------------------------------------
-
-inline double AmorPhaseMaterial::givePoisson() const
-{
-  return poisson_;
-}
 
 //-----------------------------------------------------------------------
 //   giveDim
@@ -180,12 +153,5 @@ inline ProblemType   AmorPhaseMaterial::giveState() const
 {
   return state_;
 }
-
-//=======================================================================
-//   SETTERS
-//=======================================================================
-
-inline void AmorPhaseMaterial::setYoung   ( double young   ) { young_   = young;   }
-inline void AmorPhaseMaterial::setPoisson ( double poisson ) { poisson_ = poisson; }
 
 #endif 
