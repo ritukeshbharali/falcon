@@ -7,9 +7,19 @@
 //   public functions
 //-----------------------------------------------------------------------
 
+/** @brief Declares all user constraint models
+ *  
+ *  Currently available models:
+ *     Dirichlet
+ *     Neumann
+ *     Periodic
+ */ 
+
 void  declareFalconConstraintModels    ();
 
 void  declareDirichletModel            ();
+void  declareNeumannModel              ();
+void  declarePeriodicModel             ();
 
 #endif
 
