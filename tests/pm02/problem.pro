@@ -1,6 +1,6 @@
 /* 
-  pm01    : Terzaghi consolidation
-  FE model: Saturated Porous
+  pm02    : Liakopoulos experiment
+  FE model: Two Phase Unsaturated Porous
   Material: Hooke
   Loading : Neumann
   Implicit: Nonlin
@@ -9,15 +9,15 @@
 
 log =
 {
-  pattern = "*.debug";
-  file    = "$(CASE_NAME).log";
+  pattern = "*.info";
+  file    = "-$(CASE_NAME).log";
 };
 
 control = 
 {
   fgMode   = false;
   pause    = 0.;
-  runWhile = "i < 2";
+  runWhile = "i < 125";
 };
 
 input =
@@ -25,53 +25,83 @@ input =
   file = "$(CASE_NAME).data";
 };
 
+init  =
+  {
+    reorder = false;
+    vectors = [ "state = 0.0", "oldState = 0.0"];
+
+  };
+
 model = "Matrix"
 {
   matrix.type = "FEM";
-  matrix.symmetric = true;
+  // matrix.symmetric = true;
 
   model       =  "Multi"
   {
-    models = [ "bulk",  "force"];
+    models = [ "bulk", "force" ];
 
-    bulk = "SaturatedPorous"
+    bulk = "TwoPhaseUnsaturatedPorous"
     {
       elements = "DomainElems";
 
       shape =
       {
         type      = "Quad8";
-        intScheme = "Gauss2*Gauss2";
+        intScheme = "Gauss3*Gauss3";
       };
+
+      // Unit [N,m,s]
       
       material =
       {
         type   = "Hooke";
         rank   = 2;
-        state  = "PLANE_STRAIN";
+        state  = "PLANE_STRESS";
 
-        young    = 1.0e+08;
-        poisson  = 0.0;
-        rho      = 1.0;
+        young    = 1.3e+6;
+        poisson  = 0.4;
+        rho      = 0.0;
       };
 
-      intrin_perm   = 1.0e-14;
-      fluid_visc    = 0.0089;
+      retention.type = "Liakopoulos";
+
+      intrin_perm   = 4.5e-13;
+      fluid_visc    = 0.001;
       solid_stiff   = 1.0e+10;
-      fluid_stiff   = 2.0e+09;
-      porosity      = 0.375;
+      fluid_stiff   = 2.2e+09;
+      porosity      = 0.2975;
       biot_coeff    = 1.0;
-      dtime         = 9.1225;
+      dtime         = 60.0;
+
+      rho_solid     = 2000.;
+      rho_fluid     = 1000.;
+
     };
-    
 
     force =  "LoadScale"
     {
+       scaleFunc = 
+       "
+       save
+       f_max   = 1.0
+       ,
+       t_max   = 5
+       let
+       t       = i
+       return
+       if ( t < t_max )
+       f_max
+       else
+       0.0
+       endif
+       ";
+
        model =
        {
          type     = "Neumann";
          elements = "TopElems";
-         loads    = [0.0,-1.0e+04,0.0];
+         loads    = [0.0,0.0,-1.0e-4];
          shape  =
           {
             type  = "BLine3";
@@ -94,14 +124,12 @@ extraModules =
   solver = 
   {
       type      = "Nonlin";
-      precision = 1.0e-6;    
-      maxIter   = 100;
+      precision = 1.0e-4;    
+      maxIter   = 5;
 
       solver =
       { 
-        type        = "Pardiso";
-        numThreads  = 2;
-        msglvl      = 1;
+        type = "Pardiso";
         sortColumns = 1;
       };
   };
@@ -135,7 +163,7 @@ extraModules =
       {
         // Use the solution as the z-displacement.
         autoScale=false;
-        scale = 0.001;
+        scale = 0.01;
         dy = "state[dy]";
         dx = "state[dx]";
       };
@@ -154,4 +182,15 @@ extraModules =
     //updateWhen = "accepted";
     
   };
+
+  vtk = "vtkWriter"
+    {
+       fileName   = "$(CASE_NAME)_out";
+       elements = "DomainElems";
+       interval = 1;
+       data     = ["stress"];
+       dataType = "nodes";
+
+    };
+
 };
