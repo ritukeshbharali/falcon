@@ -1,4 +1,4 @@
-/** @file SaturatedPoroModel.cpp
+/** @file SaturatedPorousModel.cpp
  *  @brief Implements saturated porous media model.
  *  
  *  This class implements the fully saturated porous media 
@@ -44,38 +44,38 @@
 /* Include other headers */
 
 #include "FalconPoroMechModels.h"
-#include "SaturatedPoroModel.h"
+#include "SaturatedPorousModel.h"
 #include "util/TbFiller.h"
 #include "util/XNames.h"
 
 #include "materials/Material.h"
 
 //=======================================================================
-//   class SaturatedPoroModel
+//   class SaturatedPorousModel
 //=======================================================================
 
 //-----------------------------------------------------------------------
 //   static data
 //-----------------------------------------------------------------------
 
-const char*  SaturatedPoroModel::DISP_NAMES[3]           = { "dx", "dy", "dz" };
-const char*  SaturatedPoroModel::SHAPE_PROP              = "shape";
-const char*  SaturatedPoroModel::MATERIAL_PROP           = "material";
+const char*  SaturatedPorousModel::DISP_NAMES[3]     = { "dx", "dy", "dz" };
+const char*  SaturatedPorousModel::SHAPE_PROP        = "shape";
+const char*  SaturatedPorousModel::MATERIAL_PROP     = "material";
 
-const char*  SaturatedPoroModel::INTRIN_PERM_PROP        = "intrin_perm";
-const char*  SaturatedPoroModel::FLUID_VISC_PROP         = "fluid_visc";
-const char*  SaturatedPoroModel::SOLID_STIFF_PROP        = "solid_stiff";
-const char*  SaturatedPoroModel::FLUID_STIFF_PROP        = "fluid_stiff";
-const char*  SaturatedPoroModel::POROSITY_PROP           = "porosity";
-const char*  SaturatedPoroModel::BIOT_COEFF_PROP         = "biot_coeff";
-const char*  SaturatedPoroModel::DTIME_PROP              = "dtime";
+const char*  SaturatedPorousModel::INTRIN_PERM_PROP  = "intrin_perm";
+const char*  SaturatedPorousModel::FLUID_VISC_PROP   = "fluid_visc";
+const char*  SaturatedPorousModel::SOLID_STIFF_PROP  = "solid_stiff";
+const char*  SaturatedPorousModel::FLUID_STIFF_PROP  = "fluid_stiff";
+const char*  SaturatedPorousModel::POROSITY_PROP     = "porosity";
+const char*  SaturatedPorousModel::BIOT_COEFF_PROP   = "biot_coeff";
+const char*  SaturatedPorousModel::DTIME_PROP        = "dtime";
 
 //-----------------------------------------------------------------------
 //   constructors & destructor
 //-----------------------------------------------------------------------
 
 
-SaturatedPoroModel::SaturatedPoroModel
+SaturatedPorousModel::SaturatedPorousModel
 
   ( const String&      name,
     const Properties&  conf,
@@ -268,7 +268,7 @@ SaturatedPoroModel::SaturatedPoroModel
 }
 
 
-SaturatedPoroModel::~SaturatedPoroModel ()
+SaturatedPorousModel::~SaturatedPorousModel ()
 {}
 
 
@@ -277,7 +277,7 @@ SaturatedPoroModel::~SaturatedPoroModel ()
 //-----------------------------------------------------------------------
 
 
-void SaturatedPoroModel::configure
+void SaturatedPorousModel::configure
 
   ( const Properties&  props,
     const Properties&  globdat )
@@ -295,7 +295,7 @@ void SaturatedPoroModel::configure
 //-----------------------------------------------------------------------
 
 
-void SaturatedPoroModel::getConfig ( const Properties& conf,
+void SaturatedPorousModel::getConfig ( const Properties& conf,
                                       const Properties&  globdat )  const
 {
   Properties  myConf  = conf  .makeProps ( myName_ );
@@ -310,7 +310,7 @@ void SaturatedPoroModel::getConfig ( const Properties& conf,
 //-----------------------------------------------------------------------
 
 
-bool SaturatedPoroModel::takeAction
+bool SaturatedPorousModel::takeAction
 
   ( const String&      action,
     const Properties&  params,
@@ -440,7 +440,7 @@ bool SaturatedPoroModel::takeAction
 //-----------------------------------------------------------------------
 
 
-void SaturatedPoroModel::getIntForce_
+void SaturatedPorousModel::getIntForce_
 
   ( const Vector&   force,
     const Vector&   state,
@@ -653,7 +653,7 @@ void SaturatedPoroModel::getIntForce_
 //-----------------------------------------------------------------------
 
 
-void SaturatedPoroModel::getMatrix_
+void SaturatedPorousModel::getMatrix_
 
   ( MatrixBuilder&  mbuilder,
     const Vector&   force,
@@ -874,7 +874,7 @@ void SaturatedPoroModel::getMatrix_
 // compute the mass matrix 
 // current implementation: consistent mass matrix
 
-void SaturatedPoroModel::getMatrix2_
+void SaturatedPorousModel::getMatrix2_
 
     ( MatrixBuilder&          mbuilder )
 {
@@ -958,7 +958,7 @@ void SaturatedPoroModel::getMatrix2_
 //-----------------------------------------------------------------------
 
 
-void SaturatedPoroModel::setConstraints_ ( Constraints& cons )
+void SaturatedPorousModel::setConstraints_ ( Constraints& cons )
 {
   using jive::util::Printer;
   using jive::geom::Geometries;
@@ -1215,7 +1215,7 @@ void SaturatedPoroModel::setConstraints_ ( Constraints& cons )
 //-----------------------------------------------------------------------
 
 
-void  SaturatedPoroModel::initializeIPMPMap_ ( )
+void  SaturatedPorousModel::initializeIPMPMap_ ( )
 
 {
   jive::IdxVector   ielems     = egroup_.getIndices  ();
@@ -1246,7 +1246,7 @@ void  SaturatedPoroModel::initializeIPMPMap_ ( )
 //-----------------------------------------------------------------------
 
 
-bool SaturatedPoroModel::getTable_
+bool SaturatedPorousModel::getTable_
 
   ( const Properties&  params,
     const Properties&  globdat )
@@ -1318,7 +1318,7 @@ bool SaturatedPoroModel::getTable_
 //-----------------------------------------------------------------------
 
 
-void SaturatedPoroModel::getStress_
+void SaturatedPorousModel::getStress_
 
   ( XTable&        table,
     const Vector&  weights )
@@ -1436,7 +1436,7 @@ void SaturatedPoroModel::getStress_
 //-----------------------------------------------------------------------
 
 
-void SaturatedPoroModel::getStrain_
+void SaturatedPorousModel::getStrain_
 
   ( XTable&        table,
     const Vector&  weights )
@@ -1554,7 +1554,7 @@ void SaturatedPoroModel::getStrain_
 //-----------------------------------------------------------------------
 
 
-void SaturatedPoroModel::getHistory_
+void SaturatedPorousModel::getHistory_
 
   ( XTable&          table,
     const Vector&    weights )
@@ -1572,7 +1572,7 @@ void SaturatedPoroModel::getHistory_
  *  components.
  */
 
-void SaturatedPoroModel::getOutputData_
+void SaturatedPorousModel::getOutputData_
 
   ( Ref<XTable>    table,
     const Vector&  weights,
@@ -1674,7 +1674,7 @@ void SaturatedPoroModel::getOutputData_
 //   checkCommit_
 //-----------------------------------------------------------------------
 
-void SaturatedPoroModel::checkCommit_
+void SaturatedPorousModel::checkCommit_
 
   ( const Properties&  params )
 
@@ -1686,7 +1686,7 @@ void SaturatedPoroModel::checkCommit_
 //   setStepSize_
 //-----------------------------------------------------------------------
 
-void SaturatedPoroModel::setStepSize_
+void SaturatedPorousModel::setStepSize_
 
   ( const Properties&  params )
 
@@ -1694,7 +1694,7 @@ void SaturatedPoroModel::setStepSize_
   double       dt;
   params.get ( dt,  XProps::STEP_SIZE   );
 
-  System::out() << "Setting step size to " << dt << " ("
+  System::debug() << "Setting step size to " << dt << " ("
     << dt / dtime_ * 100 << "\% of previous step size)" << "\n";
 
   dtime_ = dt;
@@ -1706,11 +1706,11 @@ void SaturatedPoroModel::setStepSize_
 //=======================================================================
 
 //-----------------------------------------------------------------------
-//   newSaturatedPoroModel
+//   newSaturatedPorousModel
 //-----------------------------------------------------------------------
 
 
-static Ref<Model>     newSaturatedPoroModel
+static Ref<Model>     newSaturatedPorousModel
 
   ( const String&       name,
     const Properties&   conf,
@@ -1718,18 +1718,18 @@ static Ref<Model>     newSaturatedPoroModel
     const Properties&   globdat )
 
 {
-  return newInstance<SaturatedPoroModel> ( name, conf, props, globdat );
+  return newInstance<SaturatedPorousModel> ( name, conf, props, globdat );
 }
 
 
 //-----------------------------------------------------------------------
-//   declareSaturatedPoroModel
+//   declareSaturatedPorousModel
 //-----------------------------------------------------------------------
 
 
-void declareSaturatedPoroModel ()
+void declareSaturatedPorousModel ()
 {
   using jive::model::ModelFactory;
 
-  ModelFactory::declare ( "SaturatedPoro", & newSaturatedPoroModel );
+  ModelFactory::declare ( "SaturatedPorous", & newSaturatedPorousModel );
 }

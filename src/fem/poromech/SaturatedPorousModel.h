@@ -1,4 +1,4 @@
-/** @file SaturatedPoroModel.h
+/** @file SaturatedPorousModel.h
  *  @brief Implements saturated porous media model.
  *  
  *  This class implements the fully saturated porous media 
@@ -99,20 +99,20 @@ typedef ElementGroup           ElemGroup;
 
 
 //=======================================================================
-//   class SaturatedPoroModel
+//   class SaturatedPorousModel
 //=======================================================================
 
 /** @brief 
- *  The SaturatedPoroModel class implements a Finite Element Model for
+ *  The SaturatedPorousModel class implements a Finite Element Model for
  *  saturated porous media.
  */
 
-class SaturatedPoroModel : public Model
+class SaturatedPorousModel : public Model
 {
  public:
 
-  typedef SaturatedPoroModel     Self;
-  typedef Model                  Super;
+  typedef SaturatedPorousModel     Self;
+  typedef Model                    Super;
 
   static const char*        DISP_NAMES[3];
   static const char*        SHAPE_PROP;
@@ -126,7 +126,7 @@ class SaturatedPoroModel : public Model
   static const char*        BIOT_COEFF_PROP;
   static const char*        DTIME_PROP;
 
-                            SaturatedPoroModel
+                            SaturatedPorousModel
 
     ( const String&           name,
       const Properties&       conf,
@@ -152,7 +152,7 @@ class SaturatedPoroModel : public Model
 
  protected:
 
-  virtual                  ~SaturatedPoroModel  ();
+  virtual                  ~SaturatedPorousModel  ();
 
 
  private:

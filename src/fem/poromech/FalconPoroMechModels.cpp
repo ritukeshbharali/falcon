@@ -9,7 +9,5 @@
 
 void declareFalconPoroMechModels       ()
 {
-
-	declareSaturatedPoroModel            ();
-  
+	declareSaturatedPorousModel          ();
 }

@@ -9,6 +9,6 @@
 
 
 void  declareFalconPoroMechModels        ();
-void  declareSaturatedPoroModel          ();
+void  declareSaturatedPorousModel        ();
 
 #endif
