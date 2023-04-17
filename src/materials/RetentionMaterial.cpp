@@ -3,6 +3,7 @@
 
 #include "RetentionMaterial.h"
 #include "VanGenuchtenRetentionMaterial.h"
+#include "LiakopoulosRetentionMaterial.h"
 
 using namespace jem;
 
@@ -105,6 +106,10 @@ Ref<RetentionMaterial>  newRetentionMaterial
   if ( type == "VanGenuchten" )
   {
     mat = newInstance<VanGenuchtenRetentionMaterial> ( globdat );
+  }
+  else if ( type == "Liakopoulos" )
+  {
+    mat = newInstance<LiakopoulosRetentionMaterial> ( globdat );
   }
   else
   {
