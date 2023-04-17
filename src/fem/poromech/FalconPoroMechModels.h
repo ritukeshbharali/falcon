@@ -8,7 +8,8 @@
 //-----------------------------------------------------------------------
 
 
-void  declareFalconPoroMechModels        ();
-void  declareSaturatedPorousModel        ();
+void  declareFalconPoroMechModels                  ();
+void  declareSaturatedPorousModel                  ();
+void  declareTwoPhaseUnsaturatedPorousModel        ();
 
 #endif
