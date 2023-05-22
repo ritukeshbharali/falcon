@@ -10,17 +10,11 @@
 #ifndef TENSOR_UTILS_H
 #define TENSOR_UTILS_H
 
-#include <jem/base/Array.h>
 #include <jem/base/System.h>
 #include <jem/numeric/algebra/utilities.h>
-#include <jive/Array.h>
+#include "Arrays.h"
 
-using jem::Array;
 using jem::String;
-using jive::Matrix;
-using jive::Vector;
-
-typedef Array<double,4>    Quadix;
 
 namespace tensorUtils
 
