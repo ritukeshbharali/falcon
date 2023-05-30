@@ -57,7 +57,7 @@ void Material::getConfig
 void Material::getHistory
 
   ( Vector&           hvals,
-    const idx_t       mpoint )
+    const idx_t       ipoint )
 
 {
   // Default implementation
@@ -71,7 +71,7 @@ void Material::getHistory
 void Material::setHistory
 
   ( const Vector&    hvals,
-    const idx_t      mpoint )
+    const idx_t      ipoint )
 
 {
   // Default implementation
@@ -82,6 +82,16 @@ void Material::setHistory
 //-----------------------------------------------------------------------
 
 void Material::allocPoints
+
+  ( const idx_t       npoints )
+
+{}
+
+//-----------------------------------------------------------------------
+//   deallocPoints
+//-----------------------------------------------------------------------
+
+void Material::deallocPoints
 
   ( const idx_t       npoints )
 

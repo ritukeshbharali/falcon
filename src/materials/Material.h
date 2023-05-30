@@ -17,7 +17,7 @@ using jive::Vector;
 using jive::Matrix;
 using jive::IdxVector;
 using jive::BoolVector;
-using jive::util::XTable;
+using jive::StringVector;
 
 
 //-----------------------------------------------------------------------
@@ -65,19 +65,23 @@ class Material : public Object
 
     ( const idx_t          npoints );
 
-  virtual void            commit ();
+  virtual void           deallocPoints
 
-  virtual void            checkCommit
+    ( const idx_t          npoints );  
+
+  virtual void           commit ();
+
+  virtual void           checkCommit
 
     ( const Properties&     params  );
 
-  virtual void            commitOne
+  virtual void           commitOne
 
     ( const idx_t           ipoint );
 
-  virtual void            cancel ();
+  virtual void           cancel ();
 
-  virtual idx_t           pointCount () const;
+  virtual idx_t          pointCount () const;
 
   virtual bool           isLoading
 
@@ -87,35 +91,43 @@ class Material : public Object
 
     ( const idx_t             ipoint ) const;
 
-  bool                    despair ();
+  bool                   despair ();
 
-  void                    endDespair ();
+  void                   endDespair ();
 
-  virtual Ref<Material>   clone ( ) const = 0;
+  virtual Ref<Material>  clone ( ) const = 0;
 
   //  Getters (provides read-only/copy access private/protected members of the class)
 
   virtual void           getHistory
 
     ( Vector&              hvals,
-      const idx_t          mpoint );
+      const idx_t          ipoint );
 
-  inline double           getYoung   () const;
-  inline double           getPoisson () const;
+  inline void            getHistoryNames   
+    
+    ( const StringVector&   hnames ) const;  
+
+  inline idx_t            getHistoryCount () const;
+  inline StringVector     getHistoryNames () const;
+  inline double           getYoung        () const;
+  inline double           getPoisson      () const;
 
   //  Setters (modify private/protected members of the class)  
 
   virtual void           setHistory
 
     ( const Vector&        hvals,
-      const idx_t          mpoint );
+      const idx_t          ipoint );
 
-  inline void             setYoung   ( double young   );
-  inline void             setPoisson ( double poisson );  
+  inline void            setYoung   ( double young   );
+  inline void            setPoisson ( double poisson );  
 
  protected:
 
                        ~Material ();
+      
+ protected:                         
 
   int                  rank_;
   double               young_;
@@ -124,12 +136,46 @@ class Material : public Object
   bool                 desperateMode_;
   BoolVector           hasSwitched_;
   BoolVector           useSecant_;
+
+  StringVector         historyNames_;
   
 };
 
 //=======================================================================
 //   GETTERS
 //=======================================================================
+
+//-----------------------------------------------------------------------
+//   getHistoryCount
+//-----------------------------------------------------------------------
+
+inline idx_t Material::getHistoryCount () const
+{
+  return historyNames_.size();
+}
+
+//-----------------------------------------------------------------------
+//   getHistoryNames
+//-----------------------------------------------------------------------
+
+void Material::getHistoryNames 
+
+  ( const StringVector&  hnames ) const
+{
+  JEM_ASSERT ( hnames.size() == getHistoryCount() );
+  hnames = historyNames_;
+}
+
+//-----------------------------------------------------------------------
+//   getHistoryNames
+//-----------------------------------------------------------------------
+
+inline StringVector Material::getHistoryNames 
+
+  () const
+{
+  return historyNames_;
+}
 
 //-----------------------------------------------------------------------
 //   getYoung
