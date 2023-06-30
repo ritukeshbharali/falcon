@@ -16,6 +16,6 @@ include $(JIVEDIR)/makefiles/packages/*.mk
 
 MY_LIBS          = 
 MY_INCDIRS       = ../src
-MY_LIBDIRS	     = 
-MY_CXX_STD_FLAGS = 
+MY_LIBDIRS	 = 
+MY_CXX_STD_FLAGS = -DWITH_AMGCL
 MY_LD_FLAGS      = 
