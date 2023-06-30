@@ -31,9 +31,8 @@
 /*
  * 
  *  Updates (when, what and who)
- *     - [03 May 2022], Added external solvers Umfpack and Intel Pardiso
- *       (Ritukesh Bharali, ritukesh.bharali@chalmers.se)
- *       
+ *     - [03 May 2022]  Added external solvers Umfpack and Intel Pardiso (RB)
+ *     - [30 June 2023] Added external solver library AMGCL (RB)
  */
 
 
@@ -74,6 +73,10 @@
 
 #if defined(WITH_MUMPS)
 #include "MUMPSSolver.h"
+#endif
+
+#if defined(WITH_AMGCL)
+#include "AMGCLSolver.h"
 #endif
 
 
@@ -126,6 +129,10 @@ static void declareSolvers_ ()
 
   #if defined(WITH_MUMPS)
   MUMPSSolver         :: declare ();
+  #endif
+
+  #if defined(WITH_AMGCL)
+  AMGCLSolver         :: declare ();
   #endif
 
 }
