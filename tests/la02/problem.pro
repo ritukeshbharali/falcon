@@ -1,7 +1,7 @@
 /* 
-  sm04    : 2D square 
-  FE model: Linear Elasticity
-  Material: Hooke
+  la02    : Tapered bar in tension (MUMPS)
+  FE model: Phase Fracture Ext
+  Material: Amor Phase
   Loading : Dirichlet
   Implicit: Nonlin
   Solver  : MUMPS
@@ -17,7 +17,7 @@ control =
 {
   fgMode   = false;
   pause    = 0.;
-  runWhile = "i < 2";
+  runWhile = "i < 51";
 };
 
 input =
@@ -28,13 +28,13 @@ input =
 model = "Matrix"
 {
   matrix.type = "FEM";
-  matrix.symmetric = true;
+  matrix.symmetric = false;
 
   model       =  "Multi"
   {
-    models = [ "bulk",  "force", "lodi"];
+    models = ["bulk","cons","lodi"];
 
-    bulk = "LinearElasticity"
+    bulk = "PhaseFractureExt"
     {
       elements = "DomainElems";
 
@@ -46,51 +46,73 @@ model = "Matrix"
       
       material =
       {
-        type   = "Hooke";
+        type   = "AmorPhase";
         rank   = 2;
-        state  = "PLANE_STRESS";
+        state  = "PLANE_STRAIN";
 
-        young    = 1.e+4;
-        poisson  = 0.3;
+        young    = 100.e+0;
+        poisson  = 0.0;
       };
 
-    };
+      fractureType    = "at2";
+      griffithEnergy  = 1.0;
+      lengthScale     = 0.25;
+      tensileStrength = 0.0;
+      penalty         = 6500.;
 
-    force = 
+    };
+    
+    cons = 
     {
       type       = "Dirichlet";
-      nodeGroups = "TopNodes";
-      dofs       = "dy";
+      nodeGroups = "RightNodes";
+      dofs       = "dx";
       factors    = [ 1.0];
-      stepSize   = 0.0001;
+      stepSize   = 1.e-2;
 
     };
+
+    // responsible for load-displacement curves
 
     lodi =
     {
       type   = "Lodi";
-      group  = "TopNodes";
-    };    
+      group  = "RightNodes";
+    }; 
 
   };
 };
 
 extraModules =
 {
-  modules = ["solver","graph","view","vtk"];
-   
-  solver = 
-  {
-      type = "Nonlin";
-    
-      precision = 1.0e-6;
-    
-      maxIter   = 100;
+  modules = ["solver","graph","view"];
   
+  solver = "ReduceStepping"
+  {
+    reduction      = 0.005;
+    startIncr      = 1.e-2;
+    minIncr        = 1.e-8;
+    reduceStep     = 27;
+
+    solver = "Nonlin"
+    {
+      precision = 1.e-4;
+      maxIter = 100;
+      lineSearch  = false;
+      bounds = ["b1"];
       solver =
       {
-        type  = "MUMPS";
+        type = "MUMPS";
       };
+
+      b1 = 
+      {
+         dofType    = "phi";
+         lowerBound = 0.;
+         upperBound = 1.;
+      };
+    };
+
   };
 
   graph =
@@ -100,8 +122,8 @@ extraModules =
       loadDisp =
       {
         key = "Load-displacement curve";
-        xData = "model.model.lodi.disp[1]";
-        yData = "model.model.lodi.load[1]";
+        xData = "model.model.lodi.disp[0]";
+        yData = "model.model.lodi.load[0]";
       };
    };
 
@@ -134,7 +156,7 @@ extraModules =
       {
         // Use the solution as the z-displacement.
         autoScale=false;
-        scale = 0.1;
+        scale = 0.01;
         dy = "state[dy]";
         dx = "state[dx]";
       };
@@ -146,22 +168,11 @@ extraModules =
       colors =
       {
         type = "MeshColorView";
-        data = "state[dy]";
+        data = "state[phi]";
       };
     };
     
-    //updateWhen = "accepted";
+    updateWhen = "accepted";
     
   };
-
-  vtk = "vtkWriter"
-    {
-       fileName   = "$(CASE_NAME)_out";
-       elements = "DomainElems";
-       interval = 1;
-       data     = ["stress"];
-       dataType = "nodes";
-
-    };
-
 };

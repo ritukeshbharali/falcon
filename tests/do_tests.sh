@@ -31,7 +31,7 @@ for d in */ ; do
     else
     	faild=$((faild+1))
     	echo " STATUS: Failed                           " | tee -a ../tests.log
-    	echo " "
+    	echo " "                                          | tee -a ../tests.log  
     fi
 
     cd ..

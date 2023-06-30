@@ -4,7 +4,7 @@
   Material: Hooke
   Loading : Neumann
   Implicit: Nonlin
-  Solver  : Pardiso
+  Solver  : Skyline
 */
 
 log =
@@ -99,10 +99,8 @@ extraModules =
 
       solver =
       { 
-        type        = "Pardiso";
-        numThreads  = 2;
-        msglvl      = 1;
-        sortColumns = 1;
+        type        = "Skyline";
+        useThreads  = true;
       };
   };
 

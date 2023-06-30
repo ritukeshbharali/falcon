@@ -1,10 +1,10 @@
 /* 
-  sm02    : Tapered bar in tension
+  la01    : Tapered bar in tension (AMGCL)
   FE model: Phase Fracture Ext
   Material: Amor Phase
   Loading : Dirichlet
   Implicit: Nonlin
-  Solver  : Jive Skyline
+  Solver  : AMGCL
 */
 
 log =

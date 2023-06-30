@@ -7,8 +7,7 @@
 
 <NodeConstraints>
 
-  dy[BottomNodes] = 0.0;
-  dx[BottomNodes] = 0.0;
-  dx[TopNodes]    = 0.0;
+  dy[LeftNodes] = 0.0;
+  dx[LeftNodes] = 0.0;
 
 </NodeConstraints>

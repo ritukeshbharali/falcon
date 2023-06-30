@@ -1,10 +1,10 @@
 /* 
-  sm05    : Tapered bar in tension
+  la04    : Tapered bar in tension (Umfpack)
   FE model: Phase Fracture Ext
   Material: Amor Phase
   Loading : Dirichlet
   Implicit: Nonlin
-  Solver  : Jive Skyline
+  Solver  : Umfpack
 */
 
 log =
@@ -102,8 +102,7 @@ extraModules =
       bounds = ["b1"];
       solver =
       {
-        type = "SkylineLU";
-        useThreads=true;
+        type = "Umfpack";
       };
 
       b1 = 
