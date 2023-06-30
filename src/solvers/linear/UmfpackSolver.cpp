@@ -19,6 +19,8 @@
  *       
  */
 
+#if defined(WITH_UMFPACK)
+
 /* Include jem and jive headers */
 
 #include <cmath>
@@ -990,3 +992,5 @@ void UmfpackSolver::zeroPivotHandler_ ( idx_t irow, double pivot )
 
 
 JIVE_END_PACKAGE( solver )
+
+#endif

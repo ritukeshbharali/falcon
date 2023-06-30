@@ -24,6 +24,7 @@
  *       
  */
 
+#if defined(WITH_MUMPS)
 
 /* Include jem and jive headers */
 
@@ -972,3 +973,5 @@ void MUMPSSolver::zeroPivotHandler_ ( idx_t irow, double pivot )
 
 
 JIVE_END_PACKAGE( solver )
+
+#endif

@@ -43,6 +43,9 @@
  *       It decreases the computational time. (RB)
  *       
  */
+
+#if defined(WITH_PARDISO)
+
 #ifndef JIVE_SOLVER_PARDISO_H
 #define JIVE_SOLVER_PARDISO_H
 
@@ -296,4 +299,5 @@ JEM_DEFINE_FLAG_OPS( PardisoSolver::Options )
 
 JIVE_END_PACKAGE( solver )
 
+#endif
 #endif

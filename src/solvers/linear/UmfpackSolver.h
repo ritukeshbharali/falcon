@@ -19,6 +19,7 @@
  *       
  */
 
+#if defined(WITH_UMFPACK)
 
 #ifndef JIVE_SOLVER_UMFPACK_H
 #define JIVE_SOLVER_UMFPACK_H
@@ -240,4 +241,5 @@ JEM_DEFINE_FLAG_OPS( UmfpackSolver::Options )
 
 JIVE_END_PACKAGE( solver )
 
+#endif
 #endif

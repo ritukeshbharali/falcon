@@ -44,6 +44,7 @@
  *       
  */
 
+#if defined(WITH_PARDISO)
 
 /* Include jem and jive headers */
 
@@ -1156,3 +1157,5 @@ void PardisoSolver::zeroPivotHandler_ ( idx_t irow, double pivot )
 
 
 JIVE_END_PACKAGE( solver )
+
+#endif

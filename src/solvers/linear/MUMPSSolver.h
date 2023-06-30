@@ -26,6 +26,7 @@
  *       
  */
 
+#if defined(WITH_MUMPS)
 
 #ifndef JIVE_SOLVER_MUMPS_H
 #define JIVE_SOLVER_MUMPS_H
@@ -254,4 +255,5 @@ JEM_DEFINE_FLAG_OPS( MUMPSSolver::Options )
 
 JIVE_END_PACKAGE( solver )
 
+#endif
 #endif
