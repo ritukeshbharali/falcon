@@ -1,4 +1,5 @@
 ![Ubuntu Build Status](https://github.com/ritukeshbharali/falcon/actions/workflows/ci.yml/badge.svg)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/f42e24ea5ca64976a8212c7318f3e648)](https://app.codacy.com/gh/ritukeshbharali/falcon/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 falcon
 ================
