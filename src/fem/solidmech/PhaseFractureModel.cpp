@@ -449,6 +449,16 @@ bool PhaseFractureModel::takeAction
     return true;
   }
 
+  /** GET_ARC_FUNC: Requests the arc-length function
+   */ 
+  
+  if ( action == ArclenActions::GET_ARC_FUNC && arcLenMode_ )
+  {
+    getArcFunc_ ( params, globdat );
+
+    return true;
+  }
+
   /** COMMIT: Requests an action when a computation step has converged.
    *  Ideally, at this point, the material internal state variables
    *  are swapped.

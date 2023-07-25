@@ -474,7 +474,7 @@ bool MicroPhaseFractureModel::takeAction
   
   if ( action == ArclenActions::GET_ARC_FUNC && arcLenMode_ )
   {
-    getDissipation_ ( params, globdat );
+    getArcFunc_ ( params, globdat );
 
     return true;
   }
@@ -1162,10 +1162,10 @@ void MicroPhaseFractureModel::getMatrix2_
 
 
 //-----------------------------------------------------------------------
-//   getDissipation_
+//   getArcFunc_
 //-----------------------------------------------------------------------
 
-void MicroPhaseFractureModel::getDissipation_
+void MicroPhaseFractureModel::getArcFunc_
 
   ( const Properties&  params,
     const Properties&  globdat )
