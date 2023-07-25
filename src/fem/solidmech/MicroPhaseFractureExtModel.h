@@ -7,6 +7,9 @@
  *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
  *  irreversibility is enforced using the history variable
  *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
+ *  Convexification is carried out based on extrapolation
+ *  of the phase-field for the momentum balance equation
+ *  (see DOI: 10.1016/j.cma.2015.03.009).
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
@@ -15,6 +18,10 @@
  *     - [06 August 2022] replaced hard-coded Amor phase
  *       field model with generic material update to
  *       different phase-field material models. (RB)
+ * 
+ *     - [25 July 2023] added fixed point iterations
+ *       in checkCommit_ to correct the extrapolation
+ *       error. (RB)
  */
 
 /* Include c++ headers */
@@ -118,6 +125,8 @@ class MicroPhaseFractureExtModel : public Model
   static const char*        LENGTH_SCALE_PROP;
   static const char*        TENSILE_STRENGTH_PROP;
   static const char*        PENALTY_PROP;
+  static const char*        MAX_OITER_PROP;
+  static const char*        OITER_TOL_PROP;
 
   static const char*        BRITTLE_AT1;
   static const char*        BRITTLE_AT2;
@@ -161,17 +170,13 @@ class MicroPhaseFractureExtModel : public Model
   void                      getIntForce_
 
     ( const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0,
-      const Vector&           state00 );
+      const Vector&           state );
 
   void                      getMatrix_
 
     ( MatrixBuilder&          mbuilder,
       const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0,
-      const Vector&           state00 );
+      const Vector&           state );
 
   void                      getMatrix2_
 
@@ -206,7 +211,8 @@ class MicroPhaseFractureExtModel : public Model
 
   void                      checkCommit_
 
-    ( const Properties&       params );  
+    ( const Properties&       params,
+      const Properties&       globdat );  
 
   /* Initialize the mapping between integration points
    * and material points 
@@ -295,5 +301,18 @@ class MicroPhaseFractureExtModel : public Model
 
   hist_                   preHist_;      // history of the previous load step
   hist_                   newHist_;      // history of the current iteration
+
+  // Extrapolated state vector (used for phase-field)
+
+  Vector stateExt_;
+
+  // Additional data for extrapolation correction 
+
+  idx_t  maxOIter_;
+  double oIterTol_;
+
+  double errExt_;
+  bool   extFail_;
+  idx_t  oIter_;
 
 };

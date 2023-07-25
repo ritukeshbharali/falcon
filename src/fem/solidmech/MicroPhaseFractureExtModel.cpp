@@ -7,6 +7,9 @@
  *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
  *  irreversibility is enforced using the history variable
  *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
+ *  Convexification is carried out based on extrapolation
+ *  of the phase-field for the momentum balance equation
+ *  (see DOI: 10.1016/j.cma.2015.03.009).
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
@@ -15,6 +18,10 @@
  *     - [06 August 2022] replaced hard-coded Amor phase
  *       field model with generic material update to
  *       different phase-field material models. (RB)
+ * 
+ *     - [25 July 2023] added fixed point iterations
+ *       in checkCommit_ to correct the extrapolation
+ *       error. (RB)
  */
 
 /* Include jem and jive headers */
@@ -23,6 +30,7 @@
 #include <jem/base/IllegalInputException.h>
 #include <jive/model/Actions.h>
 #include <jive/implict/ArclenActions.h>
+#include <jive/implict/SolverInfo.h>
 
 /* Include other headers */
 
@@ -54,6 +62,8 @@ const char*  MicroPhaseFractureExtModel::GRIFFITH_ENERGY_PROP  = "griffithEnergy
 const char*  MicroPhaseFractureExtModel::LENGTH_SCALE_PROP     = "lengthScale";
 const char*  MicroPhaseFractureExtModel::TENSILE_STRENGTH_PROP = "tensileStrength";
 const char*  MicroPhaseFractureExtModel::PENALTY_PROP          = "penalty";
+const char*  MicroPhaseFractureExtModel::MAX_OITER_PROP        = "maxOIter";
+const char*  MicroPhaseFractureExtModel::OITER_TOL_PROP        = "oIterTol";
 
 const char*  MicroPhaseFractureExtModel::BRITTLE_AT1           = "at1";
 const char*  MicroPhaseFractureExtModel::BRITTLE_AT2           = "at2";
@@ -244,9 +254,20 @@ MicroPhaseFractureExtModel::MicroPhaseFractureExtModel
   beta_         = 6500.0;
   myProps.find ( beta_, PENALTY_PROP );
   myConf. set  ( PENALTY_PROP, beta_ );
+
+  maxOIter_ = 1000;
+  myProps.find ( maxOIter_, MAX_OITER_PROP );
+  myConf. set  ( MAX_OITER_PROP, maxOIter_ );
+
+  oIterTol_ = 2.5e-3;
+  myProps.find ( oIterTol_, OITER_TOL_PROP );
+  myConf. set  ( OITER_TOL_PROP, oIterTol_ );
   
   preHist_.phasef_.resize ( ipCount );
   newHist_.phasef_.resize ( ipCount );
+
+  dt_          = 0.0;
+  dt0_         = 0.0;
 }
 
 
@@ -374,6 +395,7 @@ bool MicroPhaseFractureExtModel::takeAction
   using jive::model::Actions;
   using jive::model::ActionParams;
   using jive::model::StateVector;
+  using jive::implict::SolverInfo;
 
   // Compute the internal force vector
 
@@ -389,12 +411,25 @@ bool MicroPhaseFractureExtModel::takeAction
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
+
+    // Compute extrapolated state
+
+    Properties  info      = SolverInfo::get ( globdat );
+    idx_t       iterCount = 0; 
+    info.find   (  iterCount , SolverInfo::ITER_COUNT );
+
+    if ( iterCount == 0 && extFail_ == false )
+    {
+      stateExt_.resize( state.size() );
+
+      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
+    }
     
     // Get the internal force vector.
 
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getIntForce_ ( force, state, state0, state00 );
+    getIntForce_ ( force, state );
 
     return true;
   }
@@ -415,13 +450,26 @@ bool MicroPhaseFractureExtModel::takeAction
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
+
+    // Compute extrapolated state
+
+    Properties  info      = SolverInfo::get ( globdat );
+    idx_t       iterCount = 0; 
+    info.find   (  iterCount , SolverInfo::ITER_COUNT );
+
+    if ( iterCount == 0 && extFail_ == false )
+    {
+      stateExt_.resize( state.size() );
+
+      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
+    }
     
     // Get the matrix builder and the internal force vector.
 
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( *mbuilder, force, state, state0, state00 );
+    getMatrix_ ( *mbuilder, force, state );
 
     return true;
   }
@@ -456,7 +504,8 @@ bool MicroPhaseFractureExtModel::takeAction
 
   if ( action == Actions::CHECK_COMMIT )
   {
-    //checkCommit_ ( params );
+    checkCommit_ ( params, globdat );
+
     return true;
   }
 
@@ -486,9 +535,7 @@ bool MicroPhaseFractureExtModel::takeAction
 void MicroPhaseFractureExtModel::getIntForce_
 
   ( const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0,
-    const Vector&   state00 )
+    const Vector&   state )
 
 {
 
@@ -513,15 +560,10 @@ void MicroPhaseFractureExtModel::getIntForce_
   Vector      disp       ( dispCount );
   Vector      phi        ( phiCount );
 
-  // old step element vector state:
+  // extrapolated element vector state:
   // micromorphic variable
   
-  Vector      phi0       ( phiCount );
-
-  // old old step element vector state:
-  // micromorphic variable
-  
-  Vector      phi00       ( phiCount );
+  Vector      phiExt     ( phiCount );
 
   // current
 
@@ -601,10 +643,9 @@ void MicroPhaseFractureExtModel::getIntForce_
     phi   = select ( state, phiDofs  );
     disp  = select ( state, dispDofs );
 
-    // Get old step and old old step element micromorphic variable
+    // Get extrapolated element micromorphic variable
 
-    phi0  = select ( state0,  phiDofs );
-    phi00 = select ( state00, phiDofs );
+    phiExt = select ( stateExt_, phiDofs );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
@@ -638,28 +679,16 @@ void MicroPhaseFractureExtModel::getIntForce_
 
       strain_(slice(BEGIN,strCount),ipoint) = strain;
 
-      // Compute the integration point micromorphic variables (current, old, old old)
+      // Compute the integration point micromorphic variables (current, extrapolated)
 
       Vector Nip           = N( ALL,ip );
 
-      double pf            = dot ( Nip, phi   );
-      double pf0           = dot ( Nip, phi0  );
-      double pf00          = dot ( Nip, phi00 );
+      double pf            = dot ( Nip, phi    );
+      double pfEx          = dot ( Nip, phiExt );
 
-      // Linearly extrapolate old old micromorphic variable to current step
+      // Compute the extrapolation error
 
-      double pfEx          = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
-
-      // Ensure extrapolated phase-field is within bounds [0,1]
-
-      if ( pfEx < 0.0 )
-      {
-        pfEx = 0.0;
-      }
-      else if ( pfEx > 1.0 )
-      {
-        pfEx = 1.0;
-      }
+      errExt_ += ::pow( pf - pfEx, 2.0 );
 
       // Get postive/negative stress and material tangent stiffness
 
@@ -933,9 +962,7 @@ void MicroPhaseFractureExtModel::getMatrix_
 
   ( MatrixBuilder&  mbuilder,
     const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0,
-    const Vector&   state00 )
+    const Vector&   state )
 
 {
 
@@ -960,15 +987,10 @@ void MicroPhaseFractureExtModel::getMatrix_
   Vector      disp       ( dispCount );
   Vector      phi        ( phiCount );
 
-  // old step element vector state:
+  // extrapolated element vector state:
   // micromorphic variable
   
-  Vector      phi0       ( phiCount );
-
-  // old old step element vector state:
-  // micromorphic variable
-  
-  Vector      phi00       ( phiCount );
+  Vector      phiExt     ( phiCount );
 
   // current
 
@@ -1055,10 +1077,9 @@ void MicroPhaseFractureExtModel::getMatrix_
     phi   = select ( state, phiDofs  );
     disp  = select ( state, dispDofs );
 
-    // Get old step and old old step element micromorphic variable
+    // Get extrapolated element micromorphic variable
 
-    phi0  = select ( state0,  phiDofs );
-    phi00 = select ( state00, phiDofs );
+    phiExt = select ( stateExt_, phiDofs );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
@@ -1097,28 +1118,16 @@ void MicroPhaseFractureExtModel::getMatrix_
 
       strain_(slice(BEGIN,strCount),ipoint) = strain;
 
-      // Compute the integration point micromorphic variables (current, old, old old)
+      // Compute the integration point micromorphic variables (current, extrapolated)
 
       Vector Nip           = N( ALL,ip );
 
-      double pf            = dot ( Nip, phi   );
-      double pf0           = dot ( Nip, phi0  );
-      double pf00          = dot ( Nip, phi00 );
+      double pf            = dot ( Nip, phi    );
+      double pfEx          = dot ( Nip, phiExt );
 
-      // Linearly extrapolate old old micromorphic variable to current step
+      // Compute the extrapolation error
 
-      double pfEx          = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
-
-      // Ensure extrapolated micromorphic phase-field is within bounds [0,1]
-
-      if ( pfEx < 0.0 )
-      {
-        pfEx = 0.0;
-      }
-      else if ( pfEx > 1.0 )
-      {
-        pfEx = 1.0;
-      }
+      errExt_ += ::pow( pf - pfEx, 2.0 );
 
       // Get positive/negative stress and material tangent stiffness
 
@@ -1964,10 +1973,53 @@ void MicroPhaseFractureExtModel::getOutputData_
 
 void MicroPhaseFractureExtModel::checkCommit_
 
-  ( const Properties&  params )
+  ( const Properties&  params,
+    const Properties&  globdat )
 
 {
-  // System::info() << myName_ << " : check commit ... do nothing!\n";
+  using jive::model::StateVector;
+
+  Vector  state;
+
+  // Get the current state
+
+  StateVector::get ( state,   dofs_, globdat );
+
+  if ( ::sqrt(errExt_) > oIterTol_ )
+  {
+    oIter_++;
+
+    params.set ( XActions::DISCARD, false );
+    params.set ( XActions::ACCEPT , false );
+
+    System::out() << "Extrapolated phase-field not converged.\n  Error = " 
+                  << (::sqrt(errExt_)) << "\n  Outer Iter: "
+                  << oIter_ << "\n";
+
+    stateExt_ *= 0.05;
+    stateExt_ += 0.95 * state;
+    extFail_  = true;
+
+    if ( oIter_ > maxOIter_ )
+    {
+      params.set ( XActions::DISCARD, true );
+
+      extFail_  = false;
+    }
+
+
+  }
+  else
+  {
+    extFail_ = false;
+    oIter_   = 0;
+
+    System::out() << "Extrapolated phase-field converged.\n Error = " 
+                  << (::sqrt(errExt_)) << "\n  Outer Iter: "
+                  << oIter_ << "\n";
+  }
+
+  errExt_ = 0.0;
 }
 
 //-----------------------------------------------------------------------

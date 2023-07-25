@@ -5,10 +5,8 @@
  *  
  *  This class implements the unified phase-field fracture
  *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
- *  irreversibility is enforced using the penalization 
- *  approach (see DOI: 10.1016/j.cma.2019.05.038). The
- *  fracture driving and resisting energies are obtained
- *  using Amor split (see DOI: 10.1016/j.jmps.2009.04.011).
+ *  irreversibility is enforced using the history variable
+ *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
  *  Convexification is carried out based on extrapolation
  *  of the phase-field for the momentum balance equation
  *  (see DOI: 10.1016/j.cma.2015.03.009).
@@ -23,6 +21,10 @@
  *     - [14 June 2022], added getIntForce_ and removed
  *       getHistory_. getIntForce_ is required for line
  *       search operations. (RB)
+ * 
+ *     - [25 July 2023] added fixed point iterations
+ *       in checkCommit_ to correct the extrapolation
+ *       error. (RB)
  */
 
 /* Include jem and jive headers */
@@ -30,6 +32,7 @@
 #include <jem/base/Error.h>
 #include <jem/base/IllegalInputException.h>
 #include <jive/model/Actions.h>
+#include <jive/implict/SolverInfo.h>
 
 /* Include other headers */
 
@@ -61,6 +64,8 @@ const char*  PhaseFractureExtModel::GRIFFITH_ENERGY_PROP  = "griffithEnergy";
 const char*  PhaseFractureExtModel::LENGTH_SCALE_PROP     = "lengthScale";
 const char*  PhaseFractureExtModel::TENSILE_STRENGTH_PROP = "tensileStrength";
 const char*  PhaseFractureExtModel::PENALTY_PROP          = "penalty";
+const char*  PhaseFractureExtModel::MAX_OITER_PROP        = "maxOIter";
+const char*  PhaseFractureExtModel::OITER_TOL_PROP        = "oIterTol";
 
 const char*  PhaseFractureExtModel::BRITTLE_AT1           = "at1";
 const char*  PhaseFractureExtModel::BRITTLE_AT2           = "at2";
@@ -254,6 +259,14 @@ PhaseFractureExtModel::PhaseFractureExtModel
   myProps.find ( beta_, PENALTY_PROP );
   myConf. set  ( PENALTY_PROP, beta_ );
 
+  maxOIter_ = 1000;
+  myProps.find ( maxOIter_, MAX_OITER_PROP );
+  myConf. set  ( MAX_OITER_PROP, maxOIter_ );
+
+  oIterTol_ = 2.5e-3;
+  myProps.find ( oIterTol_, OITER_TOL_PROP );
+  myConf. set  ( OITER_TOL_PROP, oIterTol_ );
+
   dt_          = 0.0;
   dt0_         = 0.0;
 }
@@ -378,6 +391,7 @@ bool PhaseFractureExtModel::takeAction
   using jive::model::Actions;
   using jive::model::ActionParams;
   using jive::model::StateVector;
+  using jive::implict::SolverInfo;
 
   // Compute the internal force vector
 
@@ -394,12 +408,25 @@ bool PhaseFractureExtModel::takeAction
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
+
+    // Compute extrapolated state
+
+    Properties  info      = SolverInfo::get ( globdat );
+    idx_t       iterCount = 0; 
+    info.find   (  iterCount , SolverInfo::ITER_COUNT );
+
+    if ( iterCount == 0 && extFail_ == false )
+    {
+      stateExt_.resize( state.size() );
+
+      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
+    }
     
     // Get the internal force vector.
 
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getIntForce_ ( force, state, state0, state00 );
+    getIntForce_ ( force, state, state0 );
 
     return true;
   }
@@ -420,13 +447,26 @@ bool PhaseFractureExtModel::takeAction
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
+
+    // Compute extrapolated state
+
+    Properties  info      = SolverInfo::get ( globdat );
+    idx_t       iterCount = 0; 
+    info.find   (  iterCount , SolverInfo::ITER_COUNT );
+
+    if ( iterCount == 0 && extFail_ == false )
+    {
+      stateExt_.resize( state.size() );
+
+      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
+    }
     
     // Get the matrix builder and the internal force vector.
 
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( *mbuilder, force, state, state0, state00 );
+    getMatrix_ ( *mbuilder, force, state, state0 );
 
     return true;
   }
@@ -461,7 +501,8 @@ bool PhaseFractureExtModel::takeAction
 
   if ( action == Actions::CHECK_COMMIT )
   {
-    //checkCommit_ ( params );
+    checkCommit_ ( params, globdat );
+
     return true;
   }
 
@@ -493,8 +534,7 @@ void PhaseFractureExtModel::getIntForce_
 
   ( const Vector&   force,
     const Vector&   state,
-    const Vector&   state0,
-    const Vector&   state00 )
+    const Vector&   state0 )
 
 {
   IdxVector   ielems     = egroup_.getIndices ();
@@ -523,10 +563,10 @@ void PhaseFractureExtModel::getIntForce_
   
   Vector      phi0       ( phiCount );
 
-  // old old step element vector state:
+  // extrapolated element vector state:
   // phase-field
   
-  Vector      phi00       ( phiCount );
+  Vector      phiExt     ( phiCount );
 
   // current
 
@@ -601,10 +641,10 @@ void PhaseFractureExtModel::getIntForce_
     phi   = select ( state, phiDofs  );
     disp  = select ( state, dispDofs );
 
-    // Get old step and old old step element phase-field
+    // Get old step and extrapolated element phase-field
 
-    phi0  = select ( state0,  phiDofs );
-    phi00 = select ( state00, phiDofs );
+    phi0    = select ( state0,    phiDofs );
+    phiExt  = select ( stateExt_, phiDofs );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
@@ -642,35 +682,14 @@ void PhaseFractureExtModel::getIntForce_
 
       Vector Nip           = N( ALL,ip );
 
-      double pf            = dot ( Nip, phi   );
-      double pf0           = dot ( Nip, phi0  );
-      double pf00          = dot ( Nip, phi00 );
-      double pfEx          = 0.0;
+      double pf            = dot ( Nip, phi    );
+      double pf0           = dot ( Nip, phi0   );
+      double pfEx          = dot ( Nip, phiExt );
 
-      // Linearly extrapolate old old phase-field to current step
+      // Compute the extrapolation error
 
-      if (dt0_ < 1e-20 )
-      {
-        pfEx = pf0;
-      }
-      else
-      {
-        // pfEx              = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
-        // corrected Wick book
-        pfEx = - pf00 * dt_/dt0_ + pf0 * (dt_+dt0_)/dt0_;
-      }
+      errExt_ += ::pow( pf - pfEx, 2.0 );
       
-      // Ensure extrapolated phase-field is within bounds [0,1]
-
-      if ( pfEx < 0.0 )
-      {
-        pfEx = 0.0;
-      }
-      else if ( pfEx > 1.0 )
-      {
-        pfEx = 1.0;
-      }
-
       // Compute the degradation function with the extrapolated phase-field
 
       {
@@ -747,8 +766,7 @@ void PhaseFractureExtModel::getMatrix_
   ( MatrixBuilder&  mbuilder,
     const Vector&   force,
     const Vector&   state,
-    const Vector&   state0,
-    const Vector&   state00 )
+    const Vector&   state0 )
 
 {
   IdxVector   ielems     = egroup_.getIndices ();
@@ -777,10 +795,10 @@ void PhaseFractureExtModel::getMatrix_
   
   Vector      phi0       ( phiCount );
 
-  // old old step element vector state:
+  // extrapolated element vector state:
   // phase-field
   
-  Vector      phi00       ( phiCount );
+  Vector      phiExt     ( phiCount );
 
   // current
 
@@ -863,10 +881,10 @@ void PhaseFractureExtModel::getMatrix_
     phi   = select ( state, phiDofs  );
     disp  = select ( state, dispDofs );
 
-    // Get old step and old old step element phase-field
+    // Get old step and extrapolated element phase-field
 
-    phi0  = select ( state0,  phiDofs );
-    phi00 = select ( state00, phiDofs );
+    phi0   = select ( state0,    phiDofs );
+    phiExt = select ( stateExt_, phiDofs );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
@@ -909,34 +927,13 @@ void PhaseFractureExtModel::getMatrix_
 
       Vector Nip           = N( ALL,ip );
 
-      double pf            = dot ( Nip, phi   );
-      double pf0           = dot ( Nip, phi0  );
-      double pf00          = dot ( Nip, phi00 );
-      double pfEx          = 0.0;
+      double pf            = dot ( Nip, phi    );
+      double pf0           = dot ( Nip, phi0   );
+      double pfEx          = dot ( Nip, phiExt );
 
-      // Linearly extrapolate old old phase-field to current step
+      // Compute the extrapolation error
 
-      if (dt0_ < 1e-20 )
-      {
-        pfEx = pf0;
-      }
-      else
-      {
-        // pfEx              = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
-        // corrected Wick book
-        pfEx = - pf00 * dt_/dt0_ + pf0 * (dt_+dt0_)/dt0_;
-      }
-      
-      // Ensure extrapolated phase-field is within bounds [0,1]
-
-      if ( pfEx < 0.0 )
-      {
-        pfEx = 0.0;
-      }
-      else if ( pfEx > 1.0 )
-      {
-        pfEx = 1.0;
-      }
+      errExt_ += ::pow( pf - pfEx, 2.0 );
 
       // Compute the degradation function with the extrapolated phase-field
 
@@ -1562,10 +1559,53 @@ void PhaseFractureExtModel::getOutputData_
 
 void PhaseFractureExtModel::checkCommit_
 
-  ( const Properties&  params )
+  ( const Properties&  params,
+    const Properties&  globdat )
 
 {
-  // System::info() << myName_ << " : check commit ... do nothing!\n";
+  using jive::model::StateVector;
+
+  Vector  state;
+
+  // Get the current state
+
+  StateVector::get ( state,   dofs_, globdat );
+
+  if ( ::sqrt(errExt_) > oIterTol_ )
+  {
+    oIter_++;
+
+    params.set ( XActions::DISCARD, false );
+    params.set ( XActions::ACCEPT , false );
+
+    System::out() << "Extrapolated phase-field not converged.\n  Error = " 
+                  << (::sqrt(errExt_)) << "\n  Outer Iter: "
+                  << oIter_ << "\n";
+
+    stateExt_ *= 0.05;
+    stateExt_ += 0.95 * state;
+    extFail_  = true;
+
+    if ( oIter_ > maxOIter_ )
+    {
+      params.set ( XActions::DISCARD, true );
+
+      extFail_  = false;
+    }
+
+
+  }
+  else
+  {
+    extFail_ = false;
+    oIter_   = 0;
+
+    System::out() << "Extrapolated phase-field converged.\n Error = " 
+                  << (::sqrt(errExt_)) << "\n  Outer Iter: "
+                  << oIter_ << "\n";
+  }
+
+  errExt_ = 0.0;
 }
 
 
