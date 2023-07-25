@@ -1,0 +1,47 @@
+name: ubuntu-latest
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+  
+    runs-on: ubuntu-latest
+
+    steps:
+       
+    - name: Install pre-requisites
+      run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential g++ zlib1g-dev libreadline-dev freeglut3-dev
+      
+    - name: Install open-mpi
+      run: sudo apt-get install -y openmpi-bin openmpi-common libopenmpi-dev
+      
+    - name: Checkout falcon repository
+      uses: actions/checkout@v3
+    
+    - name: Install jem-3.0 and jive-3.0
+      run: |
+           git clone https://github.com/ritukeshbharali/jemjive-3.0.git
+           cd ./jemjive-3.0/jem-3.0 && ./configure --cxx=mpic++ && make -j2
+           echo $(pwd)    
+           export JEMDIR=$(pwd)
+           cd ../jive-3.0 && ./configure && make -j2
+           echo $(pwd)
+           export JIVEDIR=$(pwd)
+           echo Installation complete!
+           cd ../../
+           echo $(pwd)
+    
+    - name: Build falcon
+      run: |
+           cd ./build
+           export JEMDIR='/home/runner/work/falcon/falcon/jemjive-3.0/jem-3.0'
+           echo $JEMDIR
+           export JIVEDIR='/home/runner/work/falcon/falcon/jemjive-3.0/jive-3.0'
+           echo $JIVEDIR
+           make opt -f makefile.nolibs
+           echo Built falcon successfully!
