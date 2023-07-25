@@ -391,6 +391,7 @@ bool PhaseFractureModel::takeAction
   using jive::model::Actions;
   using jive::model::ActionParams;
   using jive::model::StateVector;
+  using jive::implict::ArclenActions;
 
   // Compute the internal force vector
 

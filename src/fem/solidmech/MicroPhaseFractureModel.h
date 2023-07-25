@@ -176,7 +176,7 @@ class MicroPhaseFractureModel : public Model
 
     ( MatrixBuilder&          mbuilder );
 
-  void                      getDissipation_
+  void                      getArcFunc_
 
     ( const Properties&       params,
       const Properties&       globdat );  
