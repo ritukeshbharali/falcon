@@ -1,3 +1,5 @@
+![Ubuntu Build Status](https://github.com/ritukeshbharali/falcon/actions/workflows/ci.yml/badge.svg)
+
 falcon
 ================
 
