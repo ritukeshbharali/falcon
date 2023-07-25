@@ -25,9 +25,6 @@
 #include <vector>
 #include <map>
 
-#include <boost/lexical_cast.hpp>
-#include <boost/algorithm/string.hpp>
-
 namespace jem
 {
   namespace util
