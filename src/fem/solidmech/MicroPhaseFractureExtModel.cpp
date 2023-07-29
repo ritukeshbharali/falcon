@@ -268,6 +268,8 @@ MicroPhaseFractureExtModel::MicroPhaseFractureExtModel
 
   dt_          = 0.0;
   dt0_         = 0.0;
+
+  extFail_     = false;
 }
 
 
@@ -722,7 +724,7 @@ void MicroPhaseFractureExtModel::getIntForce_
       double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
       double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
 
-      int iter = 0;
+      // int iter = 0;
 
       // Carry out the iterative procedure
 
@@ -730,7 +732,7 @@ void MicroPhaseFractureExtModel::getIntForce_
       {
 
         // Increase iteration counter 
-        iter   += 1;        
+        // iter   += 1;        
         
         // Update local phase-field
         d      -= Res/J;
@@ -795,7 +797,7 @@ void MicroPhaseFractureExtModel::getIntForce_
         ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
                            ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
 
-        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        // dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
         ddw       = 2.0 * ( 1.0 - eta_ );
 
         // Compute the degradation function derivatives with the current phase-field
@@ -850,7 +852,7 @@ void MicroPhaseFractureExtModel::getIntForce_
       Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
       J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
    
-      iter = 0;
+      // iter = 0;
 
       // Carry out the iterative procedure
 
@@ -858,7 +860,7 @@ void MicroPhaseFractureExtModel::getIntForce_
       {
 
         // Increase iteration counter 
-        iter   += 1;        
+        // iter   += 1;        
         
         // Update local phase-field
         d      -= Res/J;
@@ -913,7 +915,7 @@ void MicroPhaseFractureExtModel::getIntForce_
         ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
                            ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
 
-        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        // dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
         ddw       = 2.0 * ( 1.0 - eta_ );
 
         // Compute the degradation function derivatives with the current phase-field
@@ -1161,7 +1163,7 @@ void MicroPhaseFractureExtModel::getMatrix_
       double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
       double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
 
-      int iter = 0;
+      // int iter = 0;
 
       // Carry out the iterative procedure
 
@@ -1169,7 +1171,7 @@ void MicroPhaseFractureExtModel::getMatrix_
       {
 
         // Increase iteration counter 
-        iter   += 1;        
+        // iter   += 1;        
         
         // Update local phase-field
         d      -= Res/J;
@@ -1254,7 +1256,7 @@ void MicroPhaseFractureExtModel::getMatrix_
       Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
       J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
    
-      iter = 0;
+      // iter = 0;
 
       // Carry out the iterative procedure
 
@@ -1262,7 +1264,7 @@ void MicroPhaseFractureExtModel::getMatrix_
       {
 
         // Increase iteration counter 
-        iter   += 1;        
+        // iter   += 1;        
         
         // Update local phase-field
         d      -= Res/J;

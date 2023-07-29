@@ -269,6 +269,8 @@ PhaseFractureExtModel::PhaseFractureExtModel
 
   dt_          = 0.0;
   dt0_         = 0.0;
+
+  extFail_     = false;
 }
 
 
