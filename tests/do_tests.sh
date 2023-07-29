@@ -12,7 +12,8 @@ passd=0
 faild=0
 
 for d in */ ; do
-    cd $d
+    cd "$d"
+    rm -f *.log *.dat *.pvd *.vtu
     i=$((i+1))
     echo "------------------------------------------------------- " | tee -a ../tests.log
     echo " Running problem $i of $num"                              | tee -a ../tests.log
