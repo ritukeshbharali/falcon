@@ -88,15 +88,6 @@ class LiakopoulosRetentionMaterial : public RetentionMaterial
 
   virtual                ~LiakopoulosRetentionMaterial   ();
 
- protected:
-
-  // Material properties
-
-  double                  aVG_;
-  double                  eVG_;
-  double                  jVG_;
-  double                  sRes_;
-
 };
 
 #endif 

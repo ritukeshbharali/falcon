@@ -64,11 +64,10 @@ IdxVector    TbFiller::permj2_        = IdxVector();
 
 TbFiller::TbFiller 
 
-    ( const idx_t       rank ) : rank_ ( rank )
+    ( const idx_t       rank ) : rank_ ( rank ), ntype_ ( 0 )
 
 {
   strCount_ = STRAIN_COUNTS[rank_];
-  ntype_    = 0;
 }
 
 TbFiller::~TbFiller ()

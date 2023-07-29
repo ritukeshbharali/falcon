@@ -19,7 +19,9 @@ using namespace jem;
 RetentionMaterial::RetentionMaterial
 
   ( const Properties&  globdat )
-{}
+{
+  rho_ = 1.0;
+}
 
 RetentionMaterial::~RetentionMaterial()
 {}

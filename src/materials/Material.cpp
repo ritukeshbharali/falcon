@@ -25,6 +25,9 @@ Material::Material
 {
   desperateMode_ = false;
   rank_          = rank;
+
+  young_         = 1.0;
+  poisson_       = 0.0;
 }
 
 Material::~Material()

@@ -57,9 +57,12 @@ AmorPhaseMaterial::AmorPhaseMaterial
 
   young_   = 1.0;
   poisson_ = 1.0;
+  K_       = 1.0;
 
   stressP_.resize( STRAIN_COUNTS[rank_] );
+  
   stressP_ = 0.0;
+  Psi_     = 0.0;
 }
 
 

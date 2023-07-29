@@ -101,7 +101,9 @@ const char*  VTKWriterModule::DATA_TYPE_PROP    = "dataType";
 
 VTKWriterModule::VTKWriterModule ( const String& name ) :
   Super ( name )
-{}
+{
+  nProcs_ = 1;
+}
 
 VTKWriterModule::~VTKWriterModule ()
 {}

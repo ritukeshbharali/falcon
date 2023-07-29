@@ -106,21 +106,18 @@ ReduceSteppingModule::ReduceSteppingModule
   ( const String&  name,
     Ref<SolverModule>  solver ) :
 
-      Super    ( name   ),
-      solver_  ( solver )
+      Super       ( name   ),
+      solver_     ( solver ),
+      istep_      ( 0 ),
+      istep0_     ( 0 ),
+      startIncr_  ( 1. ),
+      minIncr_    ( 1.e-5 ),
+      cutStep_    ( -1 ),
+      reduction_  ( 0.45 ),
+      increment0_ ( 0. ),
+      increment_  ( 0. )
 
-{
-  istep_          = 0;
-  istep0_         = 0;
-
-  startIncr_      = 1.;
-  minIncr_        = 1.e-5;
-  cutStep_        = -1;
-  reduction_      = 0.45;
-  
-  increment0_     = 0.;
-  increment_      = 0.;
-}
+{}
 
 ReduceSteppingModule::~ReduceSteppingModule ()
 {}

@@ -73,6 +73,7 @@ DirichletModel::DirichletModel
     Super ( name )
 
 {
+  ngroups_  = 0;
   stepSize_ = 0.0;
   total_    = total0_ = 0.0;
 }

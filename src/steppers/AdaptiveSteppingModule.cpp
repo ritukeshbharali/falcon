@@ -116,39 +116,40 @@ AdaptiveSteppingModule::AdaptiveSteppingModule
   ( const String&  name,
     Ref<SolverModule>  solver ) :
 
-      Super    ( name   ),
-      solver_  ( solver )
+      Super       ( name   ),
+      solver_     ( solver ),
+      istep_      ( 0 ),
+      istep0_     ( 0 ),
+      nCancels_   ( 0 ),
+      nContinues_ ( 0 ),
+      maxNIter_   ( 0 ),
 
-{
-  istep_          = 0;
-  istep0_         = 0;
-  nCancels_       = 0;
-  nContinues_     = 0;
-  maxNIter_       = 0;
+      nRunTotal_  ( 0 ),
+      nCancTotal_ ( 0 ),
+      nContTotal_ ( 0 ),
+      nIterTotal_ ( 0 ),
+      nCancCont_  ( 0 ),
+      nCommTotal_ ( 0 ),
 
-  nRunTotal_      = 0;
-  nCancTotal_     = 0;
-  nContTotal_     = 0;
-  nIterTotal_     = 0;
-  nCancCont_      = 0;
-  nCommTotal_     = 0;
+      startIncr_   ( 1. ),
+      minIncr_     ( 1.e-5 ),
+      maxIncr_     ( 1. ),
+      timeMax_     ( 1.e99 ),
+      timeA_       ( 1.e99 ),
+      timeB_       ( 1.e99 ),
+      reduction_   ( 0.45 ),
+      optIter_     ( 5 ),
+      increment0_  ( 0. ),
+      increment_   ( 0. ),
+      time0_       ( 0. ),
+      time_        ( 0. ),
 
-  startIncr_      = 1.;
-  minIncr_        = 1.e-5;
-  maxIncr_        = 1.;
-  timeMax_        = 1.e99;
-  timeA_          = 1.e99;
-  timeB_          = 1.e99;
-  reduction_      = 0.45;
-  optIter_        = 5;
-  increment0_     = 0.;
-  increment_      = 0.;
+      maxIncrTried_ (0. ),
+      writeStats_   (false ),
+      triedSmall_   (false ),
+      strict_       (false )
 
-  maxIncrTried_   = 0.;
-  writeStats_     = false;
-  triedSmall_     = false;
-  strict_         = false;
-}
+{}
 
 AdaptiveSteppingModule::~AdaptiveSteppingModule ()
 {}
