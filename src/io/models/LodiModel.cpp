@@ -138,7 +138,7 @@ void LodiModel::configure
     inodes_ = nGroup.getIndices ( );
   }
 
-  if ( !nodes & !group )
+  if ( !(nodes) && !(group) )
   {
      myProps.propertyError ( context,
 			     "must specify nodes or node group!!!" );
@@ -249,8 +249,8 @@ bool LodiModel::takeAction
     Vector fint1 = fint.clone();
 
     
-    Vector      mass;
-    bool hasMass = globdat.find ( mass, "massVector" );
+    // Vector      mass;
+    // bool hasMass = globdat.find ( mass, "massVector" );
 
     // if ( !hasMass )
     // {

@@ -660,7 +660,7 @@ void MicroPhaseFractureModel::getIntForce_
       double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
       double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
 
-      int iter = 0;
+      // int iter = 0;
 
       // Carry out the iterative procedure
 
@@ -668,7 +668,7 @@ void MicroPhaseFractureModel::getIntForce_
       {
 
         // Increase iteration counter 
-        iter   += 1;        
+        // iter   += 1;        
         
         // Update local phase-field
         d      -= Res/J;
@@ -931,7 +931,7 @@ void MicroPhaseFractureModel::getMatrix_
       double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
       double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
 
-      int iter = 0;
+      // int iter = 0;
 
       // Carry out the iterative procedure
 
@@ -939,7 +939,7 @@ void MicroPhaseFractureModel::getMatrix_
       {
 
         // Increase iteration counter 
-        iter   += 1;        
+        // iter   += 1;        
         
         // Update local phase-field
         d      -= Res/J;
@@ -982,8 +982,8 @@ void MicroPhaseFractureModel::getMatrix_
         // Compute the required quantities
 
         gphi_n  = ::pow( 1.0 - d, p_);
-        gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
-                             a1_*a2_*a3_*d*d*d;
+        // gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+        //                      a1_*a2_*a3_*d*d*d;
 
         dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0 ) );
         dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
@@ -996,7 +996,7 @@ void MicroPhaseFractureModel::getMatrix_
         ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
                            ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
 
-        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        // dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
         ddw       = 2.0 * ( 1.0 - eta_ );
 
         // Compute the degradation function derivatives with the current phase-field
