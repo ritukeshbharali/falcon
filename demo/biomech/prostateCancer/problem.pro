@@ -1,4 +1,4 @@
-/* Input file for Single Edge Notched specimen under Tension (SENT) */
+/* Input file for Prostate Cancer FE Model demo */
 
 
 // Setup log file for the entire simulation
