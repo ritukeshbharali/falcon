@@ -1,0 +1,5 @@
+
+<!-- Include the finite element mesh data from another file -->
+
+<Include source="problem.mesh"/>
+<Include source="problem.init"/>

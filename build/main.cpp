@@ -40,6 +40,7 @@
 #include "fem/basic/FalconBasicModels.h"          // Basic
 #include "fem/solidmech/FalconSolidMechModels.h"  // Solid Mechanics
 #include "fem/poromech/FalconPoroMechModels.h"    // Poro Mechanics
+#include "fem/biomech/FalconBioMechModels.h"      // Bio Mechanics
 #include "io/models/FalconIOModels.h"             // Input-Output
 
 /* Include Falcon modules */
@@ -106,6 +107,7 @@ Ref<Module> mainModule ()
   declareFalconBasicModels        ();
   declareFalconSolidMechModels    ();
   declareFalconPoroMechModels     ();
+  declareFalconBioMechModels      ();
   declareFalconIOModels           ();
 
   /* Declare Falcon Modules */
