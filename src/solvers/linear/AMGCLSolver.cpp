@@ -59,6 +59,8 @@
 #include <jive/solver/StdConstrainer.h>
 #include <jive/solver/DummyConstrainer.h>
 
+#include <unordered_set>
+
 /* Include AMGCL headers */
 
 #include "AMGCLSolver.h"
@@ -120,6 +122,8 @@ using jive::algebra::SparseMatrixExt;
 const char*   AMGCLSolver::TYPE_NAME          = "AMGCL";
 const double  AMGCLSolver::PIVOT_THRESHOLD    = 0.1;
 const int     AMGCLSolver::MAX_ITER           = 1;
+const char*   AMGCLSolver::AMGCL_DEBUG        = "amgclDebug";
+
 const char*   AMGCLSolver::REORDER_METHODS[3] =
 {
   "None",
@@ -195,6 +199,7 @@ AMGCLSolver::AMGCLSolver
   error_     = 0.0;
   events_    = ~0x0;
   started_   = 0;
+  amgclDebug_= false;
   
   connect ( matrix_->newValuesEvent, this, & Self::valuesChanged_ );
   connect ( matrix_->newStructEvent, this, & Self::structChanged_ );
@@ -543,6 +548,9 @@ void AMGCLSolver::configure ( const Properties& props )
 
     findBool ( options_, PRINT_PIVOTS,
                myProps,  PropNames::PRINT_PIVOTS );
+
+    myProps.find( amgclDebug_, AMGCL_DEBUG );
+
   }
 }
 
@@ -567,6 +575,8 @@ void AMGCLSolver::getConfig ( const Properties& conf ) const
 
   setBool    ( myConf,   PropNames::PRINT_PIVOTS,
                options_, PRINT_PIVOTS );
+
+  myConf.set( AMGCL_DEBUG, amgclDebug_ );
 }
 
 

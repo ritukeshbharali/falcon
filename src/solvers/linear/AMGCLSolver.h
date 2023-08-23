@@ -65,6 +65,8 @@ class AMGCLSolver : public DirectSolver
   static const int          MAX_ITER;
   static const char*        REORDER_METHODS[3];
 
+  static const char*        AMGCL_DEBUG;
+
   enum                      Option
   {
                               PRINT_PIVOTS = 1 << 0
@@ -230,6 +232,8 @@ class AMGCLSolver : public DirectSolver
   jem::Array<int>           jindices_;   // col indices
   Vector                    values_;     // values
   Vector                    dscale_;     // diagonal entries
+
+  bool                      amgclDebug_;
 
 };
 
