@@ -1054,6 +1054,54 @@ BFGSModule::Options BFGSModule::getOptions () const
 
 
 //-----------------------------------------------------------------------
+//   setReformIter
+//-----------------------------------------------------------------------
+
+
+void BFGSModule::setReformIter ( idx_t reformIter )
+{
+  JEM_PRECHECK ( reformIter > -1 );
+
+  reformIter_ = reformIter;
+}
+
+
+//-----------------------------------------------------------------------
+//   getPrecision
+//-----------------------------------------------------------------------
+
+
+idx_t BFGSModule::getReformIter () const
+{
+  return reformIter_;
+}
+
+
+//-----------------------------------------------------------------------
+//   setMaxIter
+//-----------------------------------------------------------------------
+
+
+void BFGSModule::setMaxIter ( idx_t maxIter )
+{
+  JEM_PRECHECK ( maxIter > 0 );
+
+  maxIter_ = maxIter;
+}
+
+
+//-----------------------------------------------------------------------
+//   getMaxIter
+//-----------------------------------------------------------------------
+
+
+idx_t BFGSModule::getMaxIter () const
+{
+  return maxIter_;
+}
+
+
+//-----------------------------------------------------------------------
 //   makeNew
 //-----------------------------------------------------------------------
 
@@ -1170,21 +1218,14 @@ bool BFGSModule::solve_
 
       lineSearch_ ( w, globdat );
 
-      if ( w.hasBounds() && (w.rnorm > (lsearchTol_ * rnorm0)) )
+      /*if ( w.hasBounds() && (w.rnorm > (lsearchTol_ * rnorm0)) )
       {
 
-        // Try again with a negative line search direction
-
-        lineSearch3_ ( w, globdat );
-
-        if ( w.hasBounds() && (w.rnorm > (lsearchTol_ * rnorm0)) )
-        {
-          // Try again with a steepest descent search direction.
+        // Try again with a steepest descent search direction.
 
           lineSearch2_ ( w, globdat );
-        }
 
-      }
+      }*/
     }
     else
     {

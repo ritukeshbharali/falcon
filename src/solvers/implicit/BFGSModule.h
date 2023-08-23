@@ -96,6 +96,20 @@ class BFGSModule : public SolverModule
 
   Options                   getOptions    () const;
 
+  virtual void              setReformIter 
+
+    ( idx_t reformIter );
+
+  virtual idx_t             getReformIter () const;
+
+
+  virtual void              setMaxIter 
+
+    ( idx_t maxIter );
+
+  virtual idx_t             getMaxIter () const;
+
+
   static Ref<Module>        makeNew
 
     ( const String&           name,
