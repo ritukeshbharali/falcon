@@ -8,16 +8,8 @@
 //-----------------------------------------------------------------------
 
 
-void  declareFalconIOModules              ();
-
-
-/**
- *  User IO Modules
- * 
- *  VTK Writer
- */
-
-void  declareVTKWriterModule             ();
+void  declareFalconIOModules            ();
+void  declareParaviewModule             ();
 
 #endif
 

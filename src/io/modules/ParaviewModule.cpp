@@ -1,5 +1,5 @@
 
-/** @file VTKWriterModule.cpp
+/** @file ParaviewModule.cpp
  *  @brief Implements module to write VTK files in parallel.
  *  
  *  This class implements a module to write VTK output 
@@ -59,8 +59,9 @@
 
 /* Include user-defined class headers */
 
-#include "VTKWriterModule.h"
+#include "ParaviewModule.h"
 #include "util/BasicUtils.h"
+#include "util/XNames.h"
 
 #include <stdio.h>
 
@@ -78,7 +79,7 @@ using jive::util::DenseTable;
 
 
 //=======================================================================
-//   class VTKWriterModule
+//   class ParaviewModule
 //=======================================================================
 
 
@@ -87,10 +88,10 @@ using jive::util::DenseTable;
 //-----------------------------------------------------------------------
 
 
-const char*  VTKWriterModule::FILE_PROP         = "fileName";
-const char*  VTKWriterModule::INTERVAL_PROP     = "interval";
-const char*  VTKWriterModule::DATA_PROP         = "data";
-const char*  VTKWriterModule::DATA_TYPE_PROP    = "dataType";
+const char*  ParaviewModule::FILENAME_PROP        = "fileName";
+const char*  ParaviewModule::PRINT_INTERVAL_PROP  = "printInterval";
+const char*  ParaviewModule::POINT_DATA_PROP      = "pointData";
+const char*  ParaviewModule::CELL_DATA_PROP       = "cellData";
 
 
 
@@ -99,13 +100,11 @@ const char*  VTKWriterModule::DATA_TYPE_PROP    = "dataType";
 //-----------------------------------------------------------------------
 
 
-VTKWriterModule::VTKWriterModule ( const String& name ) :
+ParaviewModule::ParaviewModule ( const String& name ) :
   Super ( name )
-{
-  nProcs_ = 1;
-}
+{}
 
-VTKWriterModule::~VTKWriterModule ()
+ParaviewModule::~ParaviewModule ()
 {}
 
 
@@ -114,7 +113,7 @@ VTKWriterModule::~VTKWriterModule ()
 //-----------------------------------------------------------------------
 
 
-Module::Status VTKWriterModule::init
+Module::Status ParaviewModule::init
 
   ( const Properties&  conf,
     const Properties&  props,
@@ -122,6 +121,12 @@ Module::Status VTKWriterModule::init
 
 {
    using jive::mp::Globdat;
+
+   // MPI ( Get the number of process )  
+
+   mpx_    = Globdat::getMPContext ( globdat );
+   nProcs_ = 1;                                   // maybe not required!
+   nProcs_ = mpx_-> size ();
 
    Properties  myProps = props.getProps ( myName_ );
    Properties  myConf  = conf.makeProps ( myName_ );
@@ -151,23 +156,15 @@ Module::Status VTKWriterModule::init
 
    // Get number of dofs from the XDofSpace
 
-   const StringVector dofNames = dofs_->getTypeNames();
-
    dofNames_.resize ( dofTypeCount_ );
    dofTypes_.resize ( dofTypeCount_ );
-  
-   dofNames_ = dofNames;
+
+   dofNames_ = dofs_->getTypeNames();
 
    for ( idx_t i = 0; i < dofTypeCount_; i++ )
    {
      dofTypes_[i] = dofs_->addType ( dofNames_[i] );
    }
-
-   // MPI ( Get the number of process )  
-
-   mpx_    = Globdat::getMPContext ( globdat );
-   nProcs_ = 1;
-   nProcs_ = mpx_-> size ();
 
    // Get element types
 
@@ -188,8 +185,8 @@ Module::Status VTKWriterModule::init
        vtkCellCode_        = 5;
 
        // Get corner/vertex nodes for T6
-       cnodes_.resize( numVertexesPerCell_ );
-       cnodes_ = {0,2,4};
+       cornerNodes_.resize( numVertexesPerCell_ );
+       cornerNodes_ = {0,2,4};
      }
 
      // Check for Quads (Q4, Q8, Q9)
@@ -205,8 +202,8 @@ Module::Status VTKWriterModule::init
        vtkCellCode_        = 9;
 
        // Get corner/vertex nodes for Q8, Q9
-       cnodes_.resize( numVertexesPerCell_ );
-       cnodes_ = {0,2,4,6};
+       cornerNodes_.resize( numVertexesPerCell_ );
+       cornerNodes_ = {0,2,4,6};
      }
 
      else
@@ -239,8 +236,8 @@ Module::Status VTKWriterModule::init
        vtkCellCode_        = 10;
        
        // Get corner/vertex nodes for Tet10
-       cnodes_.resize( numVertexesPerCell_ );
-       cnodes_ = {0,2,4,9}; 
+       cornerNodes_.resize( numVertexesPerCell_ );
+       cornerNodes_ = {0,2,4,9}; 
      }
 
      // Check for Hexahedrons (Hex8, Hex20)
@@ -256,8 +253,8 @@ Module::Status VTKWriterModule::init
        vtkCellCode_        = 12;
 
        // Get corner/vertex nodes for Hex20
-       cnodes_.resize( numVertexesPerCell_ );
-       cnodes_ = {0,2,4,6,12,14,16,18};
+       cornerNodes_.resize( numVertexesPerCell_ );
+       cornerNodes_ = {0,2,4,6,12,14,16,18};
      }
 
      else
@@ -274,10 +271,6 @@ Module::Status VTKWriterModule::init
 
    }
 
-   // Vector to store all timestamps
-
-   timeStamps_.resize(1);
-
    return OK;
 }
 
@@ -286,7 +279,7 @@ Module::Status VTKWriterModule::init
 //   run
 //-----------------------------------------------------------------------
 
-Module::Status VTKWriterModule::run ( const Properties& globdat )
+Module::Status ParaviewModule::run ( const Properties& globdat )
 {
   using jem::Ref;
   using jem::System;
@@ -296,170 +289,190 @@ Module::Status VTKWriterModule::run ( const Properties& globdat )
   using jive::model::ActionParams;
   using jive::model::Actions;
 
-  const String   context = getContext ();
+  // Get context
 
-  // Get current process
+  const String context = getContext ();
 
-  int proc                   = mpx_-> myRank ();
+  // Get current MPI rank ( every process prints the mesh/data it owns )
 
-  // Get current (converged) step and time
+  int myRank = mpx_-> myRank ();
 
-  int           step;
-  double        time;
+  // Get the (converged) step. At this point, the solver has already
+  // updated step by +1. This change (+1) is rolled back for printing
+  // output files ( pvd, vtu ).
 
-           globdat.get  ( step, Globdat::TIME_STEP );
-  bool t = globdat.find ( time,  Globdat::TIME     );
+  int step; globdat.get ( step, Globdat::OLD_TIME_STEP ); step -= 1;
 
-  if ( t )
+  // Post-processing data is printed every 'interval_' steps
+  // By default, data from the first step, i.e, '0' is always 
+  // printed.
+
+  if ( ( step % interval_) != 0 && step > 0 ) return OK;
+
+  // Post-processing is only done when the solution is accepted 
+  
+  bool accepted = true;
+  globdat.find ( accepted, "var.accepted" );
+
+  if ( !accepted ) return OK;
+
+  // Get the current time ( for time-dependent problems, 
+  // time stamps are stored in pvd file )
+
+  double time;
+
+  if ( globdat.find ( time, Globdat::OLD_TIME ) )
   {
-    timeStamps_.pushBack( time );
+    timeStamps_.pushBack ( time );
   }
   else
   {
-    timeStamps_.pushBack( step );
+    timeStamps_.pushBack ( step );
   }
 
-  // Print first step and then every 'interval_' steps
+  stepStamps_.pushBack ( step );
 
-  if ( ( step % interval_ ) != 0 && step > 1 ) return OK;
+  // -----------------------------------------------------------------------------
+  // Print a PVD file ( overwritten on every step )
+  // -----------------------------------------------------------------------------
 
-  const String fileName = fileName_ + "_p" + String(proc) 
-                               + "_" + String(step)  + ".vtu";
+  // Allocate string to store pvd filename
 
-  // Start a PVD writer (for timestamps)
+  const String fileNamePVD = fileName_ + ".pvd";
 
-  Ref<PrintWriter>         pvdFile_;
-  pvdFile_  = newInstance<PrintWriter> (
-              newInstance<FileWriter>  ( 
-                           fileName_ + ".pvd" ));
-  *pvdFile_ << "<VTKFile byte_order='LittleEndian' type='Collection' version='0.1'>\n";
-  *pvdFile_ << "<Collection>\n";
+  // Initialize a PVD writer
 
-  for (idx_t i = 0; i <= step; ++i)
-   {
-      if ( ( i % interval_ ) != 0 && step > 1 ) continue;  
+  Ref<PrintWriter> pvdWriter = newInstance<PrintWriter> ( 
+                               newInstance<FileWriter>  ( fileNamePVD ) );
 
-      String fileNamei = fileName_ + "_p" + String(proc) 
-                               + "_" + String(i)  + ".vtu";                             
+  // Write PVD header
 
-      *pvdFile_ << "<DataSet file='"+ fileNamei 
-               + "' groups='' part='0' timestep='"
-               + String(timeStamps_[i])+"'/>\n";
-    }
+  writePVDHeader_ ( pvdWriter );
 
-    // Close the pvd file
-    *pvdFile_ << "</Collection>\n";
-    *pvdFile_ << "</VTKFile>\n";
+  // Print timestamps
 
-    pvdFile_->flush();
-    pvdFile_->close();
-
-  // Create a vtu writer
-
-  Ref<PrintWriter> vtuFile   = newInstance<PrintWriter> ( 
-                               newInstance<FileWriter>  ( 
-                               fileName ) );
-
-  // Write header, mesh and solution (STATE)
-
-  writeHeader_ ( vtuFile );
-  writeMesh_   ( vtuFile );
-  writeState_  ( vtuFile, globdat );
-
-  //System::out() << "Done printing state!! \n";
-
-  // Write PointData (Nodal average for Gauss point variables)
-  if ( dataType_ == "nodes" )
+  for ( idx_t iStep = 0; iStep < timeStamps_.size(); iStep++ )
   {
+    const String iFileNameVTU = fileName_ + "_p" + String ( myRank )
+                                          + "_"  + String ( (int) stepStamps_[iStep]  )
+                                          + ".vtu";
 
-    /** <PointData  Vectors="NodalData"> not required since
-     *  it has been written by writeState_. However,
-     *  PointData must be closed with </PointData> before
-     *  moving on to <CellData>
-    */
+    writePVDTimeStamp_ ( pvdWriter, iFileNameVTU, timeStamps_[iStep] );
+  }
 
-    const idx_t dataCount = dataNames_.size();
+  // Write PVD closure, flush and close the file
 
+  writePVDClosure_ ( pvdWriter );
+
+  pvdWriter->flush();
+  pvdWriter->close();
+
+  // -----------------------------------------------------------------------------
+  // Print a VTU file ( for current step )
+  // -----------------------------------------------------------------------------
+
+  const String fileNameVTU = fileName_ + "_p" + String ( myRank )
+                                       + "_"  + String ( step   )
+                                       + ".vtu";
+
+  // Initialize a VTU writer
+
+  Ref<PrintWriter> vtuWriter = newInstance<PrintWriter> ( 
+                               newInstance<FileWriter>  ( fileNameVTU ) );
+
+  // Write VTU header and mesh
+
+  writeVTUHeader_ ( vtuWriter );
+  writeMesh_      ( vtuWriter );
+
+  // Begin printing PointData
+
+  *vtuWriter << "<PointData  Vectors=\"NodalData\"> \n";
+
+  // Print the solution ( in Jive terminology, 'state' )
+
+  writeState_ ( vtuWriter, globdat );
+
+  // Check if additional PointData is requested
+
+  if ( pointData_.size() > 0 )
+  {
     Properties      params  ("actionParams");
     Vector          weights ( nodeCount_ );
 
-      for ( idx_t i = 0; i < dataCount; i++ )
-      {
+    for ( idx_t iData = 0; iData < pointData_.size(); iData++ )
+    {
+      String               tname ( pointData_[iData] );
+      weights            = 0.0;
 
-        String              tname (dataNames_[i]);
-        weights           = 0.0;
-        Ref<Model> model  = Model::get ( globdat, getContext() );
+      Ref<Model>  model  = Model::get ( globdat, getContext() );
+      Ref<XTable> xtable = newInstance<DenseTable>  ( tname, nodes_.getData() );
 
-        Ref<XTable>     xtable = newInstance<DenseTable>  ( tname, nodes_.getData() );
+      params.set ( ActionParams::TABLE,         xtable  );
+      params.set ( ActionParams::TABLE_NAME,    tname   );
+      params.set ( ActionParams::TABLE_WEIGHTS, weights );
 
-        params.set ( ActionParams::TABLE,         xtable  );
-        params.set ( ActionParams::TABLE_NAME,    tname   );
-        params.set ( ActionParams::TABLE_WEIGHTS, weights );
-
-        bool updated = model->takeAction ( Actions::GET_TABLE, params, globdat );
+      bool updated = model->takeAction ( Actions::GET_TABLE, params, globdat );
       
-        weights = where ( abs( weights ) < Limits<double>::TINY_VALUE, 1.0, 1.0 / weights );
-        xtable -> scaleRows    ( weights );
+      weights = where ( abs( weights ) < Limits<double>::TINY_VALUE, 1.0, 1.0 / weights );
+      xtable -> scaleRows    ( weights );
 
-        if ( updated ) 
-        {
-          writeTable_   ( vtuFile, xtable, tname );
-        }
+      if ( updated ) 
+      {
+        writeTable_   ( vtuWriter, xtable, tname );
       }
-
-    // Close PointData
-    *vtuFile << "</PointData> \n";
-
+    }
   }
 
-  // Write CellData (Gauss point average)
-  else if ( dataType_ == "elems" )
+  // Close PointData
+
+  *vtuWriter << "</PointData> \n";
+
+  // Check if additional CellData is requested
+
+  if ( cellData_.size() > 0 )
   {
-
-    // Close PointData started by writeState_
-    *vtuFile << "</PointData> \n";
-
-    // Start Cell Data
-    *vtuFile << "<CellData> \n";
-
-    const idx_t dataCount = dataNames_.size();
-
     Properties      params  ("actionParams");
-    Vector          weights ( elemCount_ );
+    Vector          weights ( elemCount_   );  // probably not required!
 
-    for ( idx_t i = 0; i < dataCount; i++ )
+    // Begin printing CellData
+
+    *vtuWriter << "<CellData> \n";
+
+    for ( idx_t iData = 0; iData < cellData_.size(); iData++ )
+    {
+      String               tname ( cellData_[iData] );
+      weights            = 1.0;
+
+      Ref<Model>  model  = Model::get ( globdat, getContext() );
+      Ref<XTable> xtable = newInstance<DenseTable>  ( tname, elems_.getData() );
+
+      params.set ( ActionParams::TABLE,         xtable  );
+      params.set ( ActionParams::TABLE_NAME,    tname   );
+      params.set ( ActionParams::TABLE_WEIGHTS, weights );
+
+      bool updated = model->takeAction ( Actions::GET_TABLE, params, globdat );
+
+      if ( updated ) 
       {
-
-        String              tname (dataNames_[i]);
-        weights           = 1.0;
-        Ref<Model> model  = Model::get ( globdat, getContext() );
-
-        Ref<XTable>     xtable = newInstance<DenseTable>  ( tname, elems_.getData() );
-
-        params.set ( ActionParams::TABLE,         xtable  );
-        params.set ( ActionParams::TABLE_NAME,    tname   );
-        params.set ( ActionParams::TABLE_WEIGHTS, weights );
-
-        bool updated = model->takeAction ( Actions::GET_TABLE, params, globdat );
-
-        if ( updated ) 
-        {
-          writeTable_   ( vtuFile, xtable, tname, elemCount_ );
-        }
+        writeTable_   ( vtuWriter, xtable, tname, elemCount_ );
       }
+    }
 
     // Close CellData
-    *vtuFile << "</CellData> \n";
+
+    *vtuWriter << "</CellData> \n";
+
   }
 
   // Write Closure
 
-  writeClosure_   ( vtuFile );
+  writeVTUClosure_   ( vtuWriter );
 
   // Flush and Close file
 
-  vtuFile->flush();
-  vtuFile->close();
+  vtuWriter->flush();
+  vtuWriter->close();
 
   return OK;
 
@@ -467,18 +480,57 @@ Module::Status VTKWriterModule::run ( const Properties& globdat )
 
 
 //-----------------------------------------------------------------------
-//   writeHeader_
+//   writePVDHeader_
 //-----------------------------------------------------------------------
     
 
-void VTKWriterModule::writeHeader_ ( Ref<PrintWriter> vtuFile )
+void ParaviewModule::writePVDHeader_ ( Ref<PrintWriter> pvdWriter )
+{
+  *pvdWriter << "<VTKFile byte_order='LittleEndian' type='Collection' version='0.1'>\n";
+  *pvdWriter << "<Collection>\n";
+}
+
+
+//-----------------------------------------------------------------------
+//   writePVDClosure_
+//-----------------------------------------------------------------------
+    
+
+void ParaviewModule::writePVDClosure_ ( Ref<PrintWriter> pvdWriter )
+{
+  *pvdWriter << "</Collection>\n";
+  *pvdWriter << "</VTKFile>\n";
+}
+
+
+//-----------------------------------------------------------------------
+//   writePVDTimeStamp_
+//-----------------------------------------------------------------------
+    
+
+void ParaviewModule::writePVDTimeStamp_ ( Ref<PrintWriter> pvdWriter,
+                                          const String&    iFileName,
+                                          const double&    iTime     )
+{
+  *pvdWriter << "<DataSet file='" + iFileName 
+               + "' groups='' part='0' timestep='"
+               + String(iTime)+"'/>\n";
+}
+
+
+//-----------------------------------------------------------------------
+//   writeVTUHeader_
+//-----------------------------------------------------------------------
+    
+
+void ParaviewModule::writeVTUHeader_ ( Ref<PrintWriter> vtuWriter )
 {
   const String str1 = String::format("<VTKFile type=\"UnstructuredGrid\" version=\"0.1\"> \n"
                                  "<UnstructuredGrid> \n"
                                    "<Piece NumberOfPoints=\"%d\" NumberOfCells=\"%d\"> \n", 
                              nodeCount_, elemCount_ );
 
-  *vtuFile << str1;
+  *vtuWriter << str1;
 }
 
 
@@ -488,13 +540,13 @@ void VTKWriterModule::writeHeader_ ( Ref<PrintWriter> vtuFile )
 //-----------------------------------------------------------------------
     
 
-void VTKWriterModule::writeMesh_ ( Ref<PrintWriter> vtuFile )
+void ParaviewModule::writeMesh_ ( Ref<PrintWriter> vtuWriter )
 {
 
   // Write node coordinates
 
-  *vtuFile << "<Points> \n";
-  *vtuFile << "<DataArray  type=\"Float64\"  NumberOfComponents=\"3\" format=\"ascii\" >\n";
+  *vtuWriter << "<Points> \n";
+  *vtuWriter << "<DataArray  type=\"Float64\"  NumberOfComponents=\"3\" format=\"ascii\" >\n";
 
   Matrix coords(rank_,nodeCount_);
 
@@ -504,25 +556,25 @@ void VTKWriterModule::writeMesh_ ( Ref<PrintWriter> vtuFile )
   {
     for(idx_t i = 0; i < nodeCount_; ++i )
     {
-      *vtuFile << coords(0,i) << " " << coords(1,i) << " " << 0. << '\n';
+      *vtuWriter << coords(0,i) << " " << coords(1,i) << " " << 0. << '\n';
     }
   }
   else
   {
     for(idx_t i = 0; i < nodeCount_; ++i )
     {
-      *vtuFile << coords(0,i) << " " << coords(1,i) << " " << coords(2,i) << '\n';
+      *vtuWriter << coords(0,i) << " " << coords(1,i) << " " << coords(2,i) << '\n';
     }
   }
 
-  *vtuFile << "</DataArray>\n </Points>\n";
+  *vtuWriter << "</DataArray>\n </Points>\n";
 
   // Write element connectivity
 
   IdxVector inodes(noNodePerElem_);
 
-  *vtuFile << "<Cells> \n";
-  *vtuFile << "<DataArray  type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
+  *vtuWriter << "<Cells> \n";
+  *vtuWriter << "<DataArray  type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
 
   for ( idx_t ie = 0; ie < elemCount_; ie++ )
   { 
@@ -535,44 +587,44 @@ void VTKWriterModule::writeMesh_ ( Ref<PrintWriter> vtuFile )
     if (noNodePerElem_ == numVertexesPerCell_ )
     {
       for ( idx_t in = 0; in < noNodePerElem_; in++ ){
-        *vtuFile << inodes[in] << " "; 
+        *vtuWriter << inodes[in] << " "; 
       }
     }
     else
     {
       for ( idx_t in = 0; in < numVertexesPerCell_; in++ ){
-        *vtuFile << inodes[cnodes_[in]] << " "; 
+        *vtuWriter << inodes[cornerNodes_[in]] << " "; 
       }
     }
 
-    *vtuFile << endl;
+    *vtuWriter << endl;
   }
 
-  *vtuFile << "</DataArray>\n";
+  *vtuWriter << "</DataArray>\n";
 
   // write cell offset
 
-  *vtuFile << "<DataArray  type=\"Int32\"  Name=\"offsets\"  format=\"ascii\"> \n";
+  *vtuWriter << "<DataArray  type=\"Int32\"  Name=\"offsets\"  format=\"ascii\"> \n";
 
   int offset = 0;
   for ( idx_t ie = 0; ie < elemCount_; ie++ )
   {
     offset += numVertexesPerCell_;
-    *vtuFile <<  offset << endl;
+    *vtuWriter <<  offset << endl;
   }
 
-  *vtuFile << "</DataArray>\n";
+  *vtuWriter << "</DataArray>\n";
 
   // Print cell types
   
-  *vtuFile << "<DataArray  type=\"UInt8\"  Name=\"types\"  format=\"ascii\"> \n";
+  *vtuWriter << "<DataArray  type=\"UInt8\"  Name=\"types\"  format=\"ascii\"> \n";
   
   for ( idx_t ie = 0; ie < elemCount_; ie++ )
   {
-     *vtuFile <<  vtkCellCode_ << endl;
+     *vtuWriter <<  vtkCellCode_ << endl;
   }
 
-  *vtuFile << "</DataArray> \n </Cells> \n";
+  *vtuWriter << "</DataArray> \n </Cells> \n";
 
 }
 
@@ -583,11 +635,9 @@ void VTKWriterModule::writeMesh_ ( Ref<PrintWriter> vtuFile )
 // Write current (converged) step solution vector (STATE)
     
 
-void VTKWriterModule::writeState_ ( Ref<PrintWriter> vtuFile,
+void ParaviewModule::writeState_ ( Ref<PrintWriter> vtuWriter,
                                            const Properties& globdat )
-{
-   *vtuFile << "<PointData  Vectors=\"NodalData\"> \n";
-   
+{   
    // Displacement field
 
    Vector  state;
@@ -596,31 +646,30 @@ void VTKWriterModule::writeState_ ( Ref<PrintWriter> vtuFile,
    int maxDofCount = rank_ == 2 ? rank_+1 : rank_;
 
    const String str1 =  String::format("<DataArray type=\"Float64\" Name=\"U\" NumberOfComponents=\"%d\" format=\"ascii\"> \n" , maxDofCount);
-   *vtuFile          << str1;
+   *vtuWriter          << str1;
 
    IdxVector  idofs    ( rank_       );
    Vector     nodeDisp ( maxDofCount );
 
    for (idx_t i = 0; i < nodeCount_; ++i)
    {
-      nodeDisp = 0.;
-      try{
-        dofs_->getDofIndices ( idofs, i, dofTypes_[slice(BEGIN, rank_)] );
+    nodeDisp = 0.;
+    try
+    {
+      dofs_->getDofIndices ( idofs, i, dofTypes_[slice(BEGIN, rank_)] );
+      nodeDisp[slice(BEGIN,rank_)] = select ( state, idofs );
+    }
+    catch ( const jem::IllegalInputException& ex )
+    {}
 
-        nodeDisp[slice(BEGIN,rank_)] = select ( state, idofs );
-      }
-      catch ( const jem::IllegalInputException& ex )
-      {
-      }
-
-      for (idx_t j = 0; j< maxDofCount; ++j)
-      {
-         *vtuFile << String::format( "%12.6e   ", nodeDisp[j] );
-      }
-      *vtuFile << endl;
+    for (idx_t j = 0; j< maxDofCount; ++j)
+    {
+      *vtuWriter << String::format( "%12.6e   ", nodeDisp[j] );
+    }
+    *vtuWriter << endl;
    }
 
-   *vtuFile << "</DataArray> \n";
+   *vtuWriter << "</DataArray> \n";
 
 
    // (Possible) additional fields
@@ -635,7 +684,7 @@ void VTKWriterModule::writeState_ ( Ref<PrintWriter> vtuFile,
     {
 
       const String str2 = String::format("<DataArray type=\"Float64\" Name=\"%s\" NumberOfComponents=\"%d\" format=\"ascii\"> \n" , dofNames_[rank_+j-1] , 1 );
-      *vtuFile << str2;
+      *vtuWriter << str2;
 
      idx_t    idof;
      double   val;
@@ -652,25 +701,25 @@ void VTKWriterModule::writeState_ ( Ref<PrintWriter> vtuFile,
        {
          
        }
-       *vtuFile << String::format( "%12.6e   ", val );
-       *vtuFile << endl;
+       *vtuWriter << String::format( "%12.6e   ", val );
+       *vtuWriter << endl;
      }
 
-     *vtuFile << "</DataArray> \n";
+     *vtuWriter << "</DataArray> \n";
 
     }
    }
 }
 
 //-----------------------------------------------------------------------
-//   writeClosure_
+//   writeVTUClosure_
 //-----------------------------------------------------------------------
     
-void VTKWriterModule::writeClosure_ ( Ref<PrintWriter> vtuFile )
+void ParaviewModule::writeVTUClosure_ ( Ref<PrintWriter> vtuWriter )
 {
-   *vtuFile << "</Piece> \n";
-   *vtuFile << "</UnstructuredGrid> \n";
-   *vtuFile << "</VTKFile> \n";
+   *vtuWriter << "</Piece> \n";
+   *vtuWriter << "</UnstructuredGrid> \n";
+   *vtuWriter << "</VTKFile> \n";
 }
 
 //-----------------------------------------------------------------------
@@ -678,9 +727,9 @@ void VTKWriterModule::writeClosure_ ( Ref<PrintWriter> vtuFile )
 //-----------------------------------------------------------------------
     
 
-void VTKWriterModule::writeTable_ 
+void ParaviewModule::writeTable_ 
 
-     ( Ref<PrintWriter> vtuFile,
+     ( Ref<PrintWriter> vtuWriter,
        Ref<XTable>      table,
        const String&    tname )
 {
@@ -692,21 +741,21 @@ void VTKWriterModule::writeTable_
 
    Matrix           coord;
 
-   // convert a table to a matrix (function in utilities.cpp)
+   // convert a table to a matrix (function in BasicUtils.cpp)
    
    matrixFromTable ( coord, *table, colNames );
    
-   *vtuFile << String::format(" <DataArray  type=\"Float64\"  Name=\"%s\" NumberOfComponents=\"%d\" format=\"ascii\"> \n",
+   *vtuWriter << String::format(" <DataArray  type=\"Float64\"  Name=\"%s\" NumberOfComponents=\"%d\" format=\"ascii\"> \n",
                              tname, colCount);
 
    for (idx_t i = 0; i < rowCount; ++i)
    {
       for (idx_t j = 0; j< colCount; ++j)
-      *vtuFile << String::format( "%12.8f   ", coord(i,j) );
-      *vtuFile << endl;
+      *vtuWriter << String::format( "%12.8f   ", coord(i,j) );
+      *vtuWriter << endl;
    }
 
-   *vtuFile << "</DataArray> \n";
+   *vtuWriter << "</DataArray> \n";
 }
 
 
@@ -715,9 +764,9 @@ void VTKWriterModule::writeTable_
 //-----------------------------------------------------------------------
     
 
-void VTKWriterModule::writeTable_ 
+void ParaviewModule::writeTable_ 
 
-     ( Ref<PrintWriter> vtuFile,
+     ( Ref<PrintWriter> vtuWriter,
        Ref<XTable>      table,
        const String&    tname,
        const int        rowCount )
@@ -729,21 +778,21 @@ void VTKWriterModule::writeTable_
 
    Matrix           coord;
 
-   // convert a table to a matrix (function in utilities.cpp)
+   // convert a table to a matrix (function in BasicUtils.cpp)
    
    matrixFromTable ( coord, *table, colNames );
    
-   *vtuFile << String::format(" <DataArray  type=\"Float64\"  Name=\"%s\" NumberOfComponents=\"%d\" format=\"ascii\"> \n",
+   *vtuWriter << String::format(" <DataArray  type=\"Float64\"  Name=\"%s\" NumberOfComponents=\"%d\" format=\"ascii\"> \n",
                              tname, colCount);
 
    for (idx_t i = 0; i < rowCount; ++i)
    {
       for (idx_t j = 0; j< colCount; ++j)
-      *vtuFile << String::format( "%12.8f   ", coord(i,j) );
-      *vtuFile << endl;
+      *vtuWriter << String::format( "%12.8f   ", coord(i,j) );
+      *vtuWriter << endl;
    }
 
-   *vtuFile << "</DataArray> \n";
+   *vtuWriter << "</DataArray> \n";
 }
 
 
@@ -752,7 +801,7 @@ void VTKWriterModule::writeTable_
 //-----------------------------------------------------------------------
 
 
-void VTKWriterModule::shutdown ( const Properties& globdat )
+void ParaviewModule::shutdown ( const Properties& globdat )
 {
   // Do nothing!
 }
@@ -763,35 +812,21 @@ void VTKWriterModule::shutdown ( const Properties& globdat )
 //-----------------------------------------------------------------------
 
 
-void VTKWriterModule::configure
+void ParaviewModule::configure
 
   ( const Properties&  props,
     const Properties&  globdat )
 
 {
+  fileName_ = "problem_out";
   interval_ = 1;
-  dataType_ = "nodes";
 
   Properties  myProps = props.findProps ( myName_ );
 
-  myProps.get  ( fileName_,  FILE_PROP      );
-  myProps.find ( interval_,  INTERVAL_PROP  );
-  myProps.get  ( dataNames_, DATA_PROP      );
-  myProps.find ( dataType_,  DATA_TYPE_PROP );
-
-  if ( dataType_ != "nodes" && dataType_ != "elems" )
-  {
-    const String  context = getContext ();
-
-    throw IllegalInputException (
-      context,
-      String::format (
-        "invalid data type: %s (should be nodes or elems)", dataType_
-      )
-    );
-
-  }
-
+  myProps.find ( fileName_,  FILENAME_PROP        );
+  myProps.find ( interval_,  PRINT_INTERVAL_PROP  );
+  myProps.find ( pointData_, POINT_DATA_PROP      );
+  myProps.find ( cellData_,  CELL_DATA_PROP       );
 }
 
 
@@ -800,7 +835,7 @@ void VTKWriterModule::configure
 //-----------------------------------------------------------------------
 
 
-void VTKWriterModule::getConfig
+void ParaviewModule::getConfig
 
   ( const Properties&  conf,
     const Properties&  globdat ) const
@@ -808,13 +843,18 @@ void VTKWriterModule::getConfig
 {
   Properties  myConf = conf.makeProps ( myName_ );
   
-  myConf.set  ( FILE_PROP,      fileName_  );
-  myConf.set  ( INTERVAL_PROP,  interval_  );
-  myConf.set  ( DATA_PROP,      dataNames_ );
-  myConf.set  ( DATA_TYPE_PROP, dataType_  );
+  myConf.set  ( FILENAME_PROP,        fileName_  );
+  myConf.set  ( PRINT_INTERVAL_PROP,  interval_  );
+  myConf.set  ( POINT_DATA_PROP,      pointData_ );
+  myConf.set  ( CELL_DATA_PROP,       cellData_  );
 }
 
-Ref<Module>  VTKWriterModule::makeNew
+
+//-----------------------------------------------------------------------
+//   makeNew
+//-----------------------------------------------------------------------
+
+Ref<Module>  ParaviewModule::makeNew
 
   ( const String&           name,
     const Properties&       conf,
@@ -829,12 +869,12 @@ Ref<Module>  VTKWriterModule::makeNew
 //=======================================================================
 
 //-----------------------------------------------------------------------
-//   declareVTKWriterModule
+//   declareParaviewModule
 //-----------------------------------------------------------------------
 
-void declareVTKWriterModule ()
+void declareParaviewModule ()
 {
   using jive::app::ModuleFactory;
 
-  ModuleFactory::declare ( "vtkWriter", & VTKWriterModule::makeNew );
+  ModuleFactory::declare ( "paraview", & ParaviewModule::makeNew );
 }

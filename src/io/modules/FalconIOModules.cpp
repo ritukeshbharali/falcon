@@ -9,13 +9,5 @@
 
 void declareFalconIOModules ()
 {
-
-/**
- *  User IO Modules
- * 
- *  VTK Writer
- */
-
-  declareVTKWriterModule             ();
-
+  declareParaviewModule     ();
 }

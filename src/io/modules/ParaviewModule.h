@@ -1,5 +1,5 @@
 
-/** @file VTKWriterModule.h
+/** @file ParaviewModule.h
  *  @brief Implements module to write VTK files in parallel.
  *  
  *  This class implements a module to write VTK output 
@@ -36,8 +36,8 @@
  */
 
 
-#ifndef VTK_WRITER_MODULE_H
-#define VTK_WRITER_MODULE_H
+#ifndef PARAVIEW_MODULE_H
+#define PARAVIEW_MODULE_H
 
 /* Include jem and jive headers */
 
@@ -96,30 +96,29 @@ typedef ElementGroup            ElemGroup;
 
 
 //=======================================================================
-//   class VTKWriterModule
+//   class ParaviewModule
 //=======================================================================
 
 /** @brief 
- *  The VTKWriterModule class writes vtk files for post-processing 
+ *  The ParaviewModule class writes vtk files for post-processing 
  *  simulation data in Paraview, MayaVi or VisIt.
  */ 
 
-class VTKWriterModule : public Module
+class ParaviewModule : public Module
 {
  public:
 
-  typedef VTKWriterModule   Self;
+  typedef ParaviewModule    Self;
   typedef Module            Super;
 
-  static const char*        FILE_PROP;
-  static const char*        INTERVAL_PROP;
-  static const char*        DATA_PROP;
-  static const char*        DATA_TYPE_PROP;
+  static const char*        FILENAME_PROP;
+  static const char*        PRINT_INTERVAL_PROP;
+  static const char*        POINT_DATA_PROP;
+  static const char*        CELL_DATA_PROP;
 
+  explicit                  ParaviewModule
 
-  explicit                  VTKWriterModule
-
-    ( const String&           name = "vtkWriter" );
+    ( const String&           name = "paraview" );
 
   virtual Status            init
 
@@ -154,60 +153,76 @@ class VTKWriterModule : public Module
 
  protected:
 
-  virtual                  ~VTKWriterModule   ();
+  virtual                  ~ParaviewModule   ();
 
  private:
 
-  void                     writeHeader_  ( Ref<PrintWriter>  vtuFile  );
-  void                     writeClosure_ ( Ref<PrintWriter>  vtuFile  );
+  // Write PVD file
 
-  void                     writeMesh_    ( Ref<PrintWriter>  vtuFile  );
-  
-  void                     writeState_   ( Ref<PrintWriter>  vtuFile,
-                                           const Properties& globdat  );
+  void                     writePVDHeader_  ( Ref<PrintWriter>  pvdWriter  );
+  void                     writePVDClosure_ ( Ref<PrintWriter>  pvdWriter  );
 
-  void                     writeTable_   ( Ref<PrintWriter>  vtuFile,
-                                           Ref<XTable>       table,
-                                           const String&     tname    );
+  void                     writePVDTimeStamp_ ( Ref<PrintWriter>  pvdWriter,
+                                                const String&     iFileName,
+                                                const double&     iTime     );
 
-  void                     writeTable_   ( Ref<PrintWriter>  vtuFile,
-                                           Ref<XTable>       table,
-                                           const String&     tname,
-                                           const int         rowCount );
+  // Write VTU file
+
+  void                     writeVTUHeader_  ( Ref<PrintWriter>  vtuWriter  );
+  void                     writeVTUClosure_ ( Ref<PrintWriter>  vtuWriter  );
+
+  // Write FE information
+
+  void                     writeMesh_       ( Ref<PrintWriter>  vtuWriter  );
+
+  void                     writeState_      ( Ref<PrintWriter>  vtuWriter,
+                                              const Properties& globdat  );
+
+  // Write tabular data
+
+  void                     writeTable_      ( Ref<PrintWriter>  vtuWriter,
+                                              Ref<XTable>       table,
+                                              const String&     tname    );
+
+  void                     writeTable_      ( Ref<PrintWriter>  vtuWriter,
+                                              Ref<XTable>       table,
+                                              const String&     tname,
+                                              const int         rowCount );
 
  private:
 
-  String                   fileName_;
-
-  Assignable<ElemGroup>    egroup_;
-  Assignable<ElemSet>      elems_;
-  Assignable<NodeSet>      nodes_;
-  Ref<XDofSpace>           dofs_;
-  
   Ref<Context>             mpx_;
   int                      nProcs_;
 
-  idx_t                    numVertexesPerCell_;
-  idx_t                    vtkCellCode_;
+  String                   fileName_;
 
+  int                      rank_;
+  
+  Assignable<ElemGroup>    egroup_;
+  Assignable<ElemSet>      elems_;
+  Assignable<NodeSet>      nodes_;
+  IdxVector                inodes_;
+  IdxVector                ielems_;
+  int                      elemCount_;
+  int                      nodeCount_;
+  
+  Ref<XDofSpace>           dofs_;
   idx_t                    dofTypeCount_;
   IdxVector                dofTypes_;
   StringVector             dofNames_;
 
-  int                      elemCount_;
-  int                      nodeCount_;
+  IdxVector                cornerNodes_;
+  idx_t                    numVertexesPerCell_;
+  idx_t                    vtkCellCode_;
   int                      noNodePerElem_;
-  int                      rank_;
+  
   int                      interval_;
 
-  IdxVector                inodes_;
-  IdxVector                ielems_;
-  StringVector             dataNames_;
-  String                   dataType_;
-
-  IdxVector                cnodes_;
+  StringVector             pointData_;
+  StringVector             cellData_;
 
   ArrayBuffer<double>      timeStamps_;
+  ArrayBuffer<double>      stepStamps_;
 
 };
 
