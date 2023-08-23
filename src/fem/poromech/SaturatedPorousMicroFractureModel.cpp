@@ -13,7 +13,6 @@
  * 
  *  Please consider citing the corresponding article
  *  (doi:10.1007/s00466-023-02380-1), if the code benefits you.
- *   
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
@@ -826,14 +825,14 @@ void SaturatedPorousMicroFractureModel::getMatrix_
   Matrix      coords     ( rank_, nodeCount );
 
   // current element vector state:
-  // displacement, pressure, micromorphic phase-field
+  // displacement, pressure, phase-field
   
   Vector      disp       ( dispCount );
   Vector      pres       ( nodeCount );
   Vector      phi        ( nodeCount );
 
   // old step element vector state:
-  // displacement, pressure, micromorphic phase-field
+  // displacement, pressure, phase-field
   
   Vector      disp0      ( dispCount );
   Vector      pres0      ( nodeCount );
@@ -1022,7 +1021,8 @@ void SaturatedPorousMicroFractureModel::getMatrix_
 
       // Compute the integration point phase-fields (current, old, old old)
 
-      double pf  = dot  ( Nip, phi   );
+      double pf  = dot ( Nip, phi  );
+      double pf0 = dot ( Nip, phi0 );
       double pfEx = dot ( Nip, phiEx );
 
       errExt_ += ::pow( pf - pfEx, 2.0 );
@@ -1324,46 +1324,44 @@ void SaturatedPorousMicroFractureModel::getMatrix_
       {
         kappaBulk = Keff_ * I2;
 
-        // Compute residual crack opening 
-
-        double wr = ::sqrt( 120. * kappa_ ); // sqrt ( 12 * 10 * kappa_ )
-
-        // Compute normalized phase-field gradient
-
-        Vector   pfGrad  ( rank_ ); pfGrad = 0.0;
-        matmul ( pfGrad, be, phi );
-
-        double  pfGradNorm = jem::numeric::norm2(pfGrad);
-        pfGrad /= pfGradNorm;
-
-        // Get strain in a tensorial format
-
-        Matrix strainT = tensorUtils::voigt2tensorRankStrain ( strain );
-
-        // Compute the fracture opening
-
-        double wc = ::sqrt(area) * ( 1.0 + dot( pfGrad, matmul( strainT, pfGrad ) ) );
-
-        // Compute final fracture opening ( max of wc and wr )
-
-        double wh = max( wr, wc );
-
-        // Compute fracture permeability
-
-        kappaFrac = ( wh * wh / ( 12. * mu_ ) ) * I2 ;
-
-        // Add anisotropy
-
-        if ( permType_ == CUBIC_PERM )
-        {
-          kappaFrac -= ( wh * wh / ( 12. * mu_ ) ) * matmul ( pfGrad, pfGrad ) ;
-        }
-
-        // Compute dual permeability
-
         if ( d > 0.8 )
         {
-          kappaComb = kappaBulk + 25. * ::pow( d - 0.8, 2.0 ) * kappaFrac;
+          // Compute residual crack opening 
+
+          double wr = ::sqrt( 120. * Keff_ ); // sqrt ( 12 * 10 * Keff_ )
+
+          // Compute normalized phase-field gradient
+
+          Vector   pfGrad  ( rank_ ); pfGrad = 0.0;
+          matmul ( pfGrad, be, phi );
+
+          double  pfGradNorm = jem::numeric::norm2(pfGrad);
+          pfGrad /= pfGradNorm;
+
+          // Get strain in a tensorial format
+
+          Matrix strainT = tensorUtils::voigt2tensorRankStrain ( strain );
+
+          // Compute the fracture opening
+
+          double wc = ::sqrt(area) * ( 1.0 + dot( pfGrad, matmul( strainT, pfGrad ) ) );
+
+          // Compute final fracture opening ( max of wc and wr )
+
+          double wh = max( wr, wc );
+
+          if ( permType_ == CUBIC_PERM )
+          {
+            kappaFrac  = - matmul( pfGrad, pfGrad );
+            kappaFrac += I2;
+            kappaFrac *= ( wh * wh / 12. );
+          }
+          else
+          {
+            kappaFrac = ( wh * wh / 12. ) * I2 ;
+          }
+
+          kappaComb = kappaBulk + 25. * ::pow( d - 0.8 ,2.0 ) * kappaFrac;
         }
         else
         {
@@ -1510,6 +1508,9 @@ void SaturatedPorousMicroFractureModel::getArcFunc_
   using jive::implict::ArclenActions;
   using jive::implict::ArclenParams;
 
+  //idx_t       iiter = 0; 
+  //globdat.get (  iiter , "iiter" );
+
   // Get the state vectors (current and old)
 
   Vector  state;
@@ -1517,6 +1518,24 @@ void SaturatedPorousMicroFractureModel::getArcFunc_
 
   StateVector::get       ( state,   dofs_, globdat );
   StateVector::getOld    ( state0,  dofs_, globdat );
+
+  /*if ( iiter == 0 )
+  {
+    StateVector::getOldOld ( state0,  dofs_, globdat );
+  }
+  else
+  {
+    StateVector::getOld    ( state0,  dofs_, globdat );
+  }*/
+
+  // Get the state vectors (current and old)
+
+  /*Vector  state;
+  Vector  state0;
+
+  StateVector::get       ( state,   dofs_, globdat );
+  StateVector::getOld    ( state0,  dofs_, globdat );
+  StateVector::getOldOld ( state00, dofs_, globdat );*/
 
   // Get the arc-length parameters and set them to zero
 
@@ -1707,6 +1726,13 @@ void SaturatedPorousMicroFractureModel::getArcFunc_
 
       wip         = ipWeights[ip];
 
+      /*if ( gphi0 > gphi && Psi > 0.0 && dtime_ > 0.0 )
+      {
+        fvalue      +=  wip * ( gphi0 - gphi ) * Psi;
+        elemjac10_0 +=  wip * ( gphi0 - gphi ) * ( mc1.matmul ( bdt, stressP ) );
+        elemjac10_2 -=  wip * Nip * dgphi * Psi;
+      }*/
+
       fvalue      +=  wip * ( gphi0 - gphi ) * Psi;
       elemjac10_0 +=  wip * ( gphi0 - gphi ) * ( mc1.matmul ( bdt, stressP ) );
       elemjac10_2 -=  wip * Nip * dgphi * Psi;
@@ -1719,6 +1745,18 @@ void SaturatedPorousMicroFractureModel::getArcFunc_
     select ( jac10, phiDofs  ) += elemjac10_2;
 
   }
+
+  System::out() << " getArcFunc_ gives dissipation = " << fvalue << "\n";
+
+  // (This works for all cases! 1.e+3 is tuning factor, which might be problem
+  //  dependent!)
+
+  // fvalue += exp( -2.0 * dtime_ + 2.5 ) / 1.e+3;
+  // jac11   = - exp ( -2.0 * dtime_ + 2.5 ) / 5.e+2;
+
+  // const double a = 0.5;
+  // fvalue += dtime_ * exp( - a * dtime_ );
+  // jac11   = ( 1.0 - a * dtime_ ) * exp( -a * dtime_ );
 
   globdat.set ( XProps::FE_DISSIPATION,    fvalue );
   params .set ( ArclenParams::JACOBIAN10,  jac10  );
@@ -1831,6 +1869,10 @@ void SaturatedPorousMicroFractureModel::getUnitLoad_
   
   double      wip;
 
+  // Initialize degradation function
+
+  //double      gphi;
+
   // Iterate over all elements assigned to this model.
 
   for ( int ie = 0; ie < ielemCount; ie++ )
@@ -1872,6 +1914,7 @@ void SaturatedPorousMicroFractureModel::getUnitLoad_
 
     disp0 = select ( state0, dispDofs );
     pres0 = select ( state0, presDofs );
+    //phi0  = select ( state0,  phiDofs  );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
@@ -1938,6 +1981,10 @@ void SaturatedPorousMicroFractureModel::getUnitLoad_
     select ( unitLoad, presDofs ) += elemUnitForce2;
     select ( unitLoad, phiDofs  ) += elemUnitForce3;
   }
+
+  // double norm2UnitLoad = jem::numeric::norm2( unitLoad );
+
+  //System::out() << "Norm of Unit Load = " << norm2UnitLoad << "\n";
 
   globdat.set ( XProps::FE_UNIT_LOAD, unitLoad );
 
@@ -2657,8 +2704,10 @@ void SaturatedPorousMicroFractureModel::checkCommit_
                   << (::sqrt(errExt_)) << "\n  Outer Iter: "
                   << oIter_ << "\n";
 
-    stateExt_ *= 0.05;
-    stateExt_ += 0.95 * state;
+    //stateExt_ *= 0.05;
+    //stateExt_ += 0.95 * state;
+    
+    stateExt_ = state;
     extFail_  = true;
   }
   else
