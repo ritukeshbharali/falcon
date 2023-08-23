@@ -1,5 +1,5 @@
 
-/** @file PhaseFractureExtModel.cpp
+/** @file PhaseFractureExtItModel.cpp
  *  @brief Implements the linear elasticity model.
  *  
  *  This class implements a finite element model with
@@ -88,20 +88,20 @@ typedef ElementSet             ElemSet;
 typedef ElementGroup           ElemGroup;
 
 //=======================================================================
-//   class PhaseFractureExtModel
+//   class PhaseFractureExtItModel
 //=======================================================================
 
 /** @brief 
- *  The PhaseFractureExtModel class implements a phase-field fracture
+ *  The PhaseFractureExtItModel class implements a phase-field fracture
  *  FE Model using extrapolation technique.
  */
 
-class PhaseFractureExtModel : public Model
+class PhaseFractureExtItModel : public Model
 {
   
  public:
 
-  typedef PhaseFractureExtModel  Self;
+  typedef PhaseFractureExtItModel  Self;
   typedef Model                  Super;
 
   static const char*        DISP_NAMES[3];
@@ -124,7 +124,7 @@ class PhaseFractureExtModel : public Model
 
   static vector<String>     fractureModels;
 
-                            PhaseFractureExtModel
+                            PhaseFractureExtItModel
 
     ( const String&           name,
       const Properties&       conf,
@@ -150,7 +150,7 @@ class PhaseFractureExtModel : public Model
 
  protected:
 
-  virtual                  ~PhaseFractureExtModel  ();
+  virtual                  ~PhaseFractureExtItModel  ();
 
  private:
 
@@ -197,7 +197,8 @@ class PhaseFractureExtModel : public Model
 
   void                      checkCommit_
 
-    ( const Properties&       params );
+    ( const Properties&       params,
+      const Properties&       globdat );
 
  void                      setStepSize_
 
@@ -277,5 +278,13 @@ class PhaseFractureExtModel : public Model
 
   double dt_ ;
   double dt0_;
+
+  Vector stateI0_;
+  Vector stateI00_;
+  Vector stateExt_;
+
+  double errExt_;
+  bool   extFail_;
+  idx_t  oIter_;
 
 };

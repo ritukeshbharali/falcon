@@ -1,5 +1,5 @@
 
-/** @file PhaseFractureExtModel.cpp
+/** @file PhaseFractureExtItModel.cpp
  *  @brief Implements a extrapolation-based convexified phase-field 
  *         fracture model.
  *  
@@ -29,12 +29,15 @@
 
 #include <jem/base/Error.h>
 #include <jem/base/IllegalInputException.h>
+#include <jem/numeric/algebra/utilities.h>
+#include <jem/numeric/algebra/EigenUtils.h>
 #include <jive/model/Actions.h>
+#include <jive/implict/SolverInfo.h>
 
 /* Include other headers */
 
 #include "FalconSolidMechModels.h"
-#include "PhaseFractureExtModel.h"
+#include "PhaseFractureExtItModel.h"
 #include "util/TbFiller.h"
 #include "util/XNames.h"
 
@@ -43,7 +46,7 @@
 
 
 //=======================================================================
-//   class PhaseFractureExtModel
+//   class PhaseFractureExtItModel
 //=======================================================================
 
 //-----------------------------------------------------------------------
@@ -51,25 +54,25 @@
 //-----------------------------------------------------------------------
 
 
-const char*  PhaseFractureExtModel::DISP_NAMES[3]         = { "dx", "dy", "dz" };
-const char*  PhaseFractureExtModel::SHAPE_PROP            = "shape";
-const char*  PhaseFractureExtModel::MATERIAL_PROP         = "material";
-const char*  PhaseFractureExtModel::RHO_PROP              = "rho";
+const char*  PhaseFractureExtItModel::DISP_NAMES[3]         = { "dx", "dy", "dz" };
+const char*  PhaseFractureExtItModel::SHAPE_PROP            = "shape";
+const char*  PhaseFractureExtItModel::MATERIAL_PROP         = "material";
+const char*  PhaseFractureExtItModel::RHO_PROP              = "rho";
 
-const char*  PhaseFractureExtModel::FRACTURE_TYPE_PROP    = "fractureType";
-const char*  PhaseFractureExtModel::GRIFFITH_ENERGY_PROP  = "griffithEnergy";
-const char*  PhaseFractureExtModel::LENGTH_SCALE_PROP     = "lengthScale";
-const char*  PhaseFractureExtModel::TENSILE_STRENGTH_PROP = "tensileStrength";
-const char*  PhaseFractureExtModel::PENALTY_PROP          = "penalty";
+const char*  PhaseFractureExtItModel::FRACTURE_TYPE_PROP    = "fractureType";
+const char*  PhaseFractureExtItModel::GRIFFITH_ENERGY_PROP  = "griffithEnergy";
+const char*  PhaseFractureExtItModel::LENGTH_SCALE_PROP     = "lengthScale";
+const char*  PhaseFractureExtItModel::TENSILE_STRENGTH_PROP = "tensileStrength";
+const char*  PhaseFractureExtItModel::PENALTY_PROP          = "penalty";
 
-const char*  PhaseFractureExtModel::BRITTLE_AT1           = "at1";
-const char*  PhaseFractureExtModel::BRITTLE_AT2           = "at2";
-const char*  PhaseFractureExtModel::LINEAR_CZM            = "czmLinear";
-const char*  PhaseFractureExtModel::EXPONENTIAL_CZM       = "czmExponential";
-const char*  PhaseFractureExtModel::CORNELISSEN_CZM       = "czmCornelissen";
-const char*  PhaseFractureExtModel::HYPERBOLIC_CZM        = "czmHyperbolic";
+const char*  PhaseFractureExtItModel::BRITTLE_AT1           = "at1";
+const char*  PhaseFractureExtItModel::BRITTLE_AT2           = "at2";
+const char*  PhaseFractureExtItModel::LINEAR_CZM            = "czmLinear";
+const char*  PhaseFractureExtItModel::EXPONENTIAL_CZM       = "czmExponential";
+const char*  PhaseFractureExtItModel::CORNELISSEN_CZM       = "czmCornelissen";
+const char*  PhaseFractureExtItModel::HYPERBOLIC_CZM        = "czmHyperbolic";
 
-vector<String> PhaseFractureExtModel::fractureModels (6);
+vector<String> PhaseFractureExtItModel::fractureModels (6);
 
 
 //-----------------------------------------------------------------------
@@ -77,7 +80,7 @@ vector<String> PhaseFractureExtModel::fractureModels (6);
 //-----------------------------------------------------------------------
 
 
-PhaseFractureExtModel::PhaseFractureExtModel
+PhaseFractureExtItModel::PhaseFractureExtItModel
 
   ( const String&      name,
     const Properties&  conf,
@@ -256,10 +259,13 @@ PhaseFractureExtModel::PhaseFractureExtModel
 
   dt_          = 0.0;
   dt0_         = 0.0;
+
+  extFail_     = false;
+  oIter_       = 0;
 }
 
 
-PhaseFractureExtModel::~PhaseFractureExtModel ()
+PhaseFractureExtItModel::~PhaseFractureExtItModel ()
 {}
 
 
@@ -268,7 +274,7 @@ PhaseFractureExtModel::~PhaseFractureExtModel ()
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::configure
+void PhaseFractureExtItModel::configure
 
   ( const Properties&  props,
     const Properties&  globdat )
@@ -353,7 +359,7 @@ void PhaseFractureExtModel::configure
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getConfig ( const Properties& conf,
+void PhaseFractureExtItModel::getConfig ( const Properties& conf,
                                       const Properties&  globdat )  const
 {
   Properties  myConf  = conf  .makeProps ( myName_ );
@@ -368,7 +374,7 @@ void PhaseFractureExtModel::getConfig ( const Properties& conf,
 //-----------------------------------------------------------------------
 
 
-bool PhaseFractureExtModel::takeAction
+bool PhaseFractureExtItModel::takeAction
 
   ( const String&      action,
     const Properties&  params,
@@ -383,6 +389,7 @@ bool PhaseFractureExtModel::takeAction
 
   if ( action == Actions::GET_INT_VECTOR )
   {
+    using jive::implict::SolverInfo;
 
     Vector  state;
     Vector  state0;
@@ -394,12 +401,32 @@ bool PhaseFractureExtModel::takeAction
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
+
+    Properties  info      = SolverInfo::get ( globdat );
+    idx_t       iterCount = 0; 
+    info.find   (  iterCount , SolverInfo::ITER_COUNT );
+
+    if ( iterCount == 0 && extFail_ == false )
+    {
+      stateExt_.resize( state.size() );
+      stateI0_ .resize( state.size() );   stateI0_  = 0.0;
+      stateI00_.resize( state.size() );   stateI00_ = 0.0;
+
+      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
+    }
+    else
+    {
+      // stateExt_ = stateI00_ + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( stateI0_ - stateI00_ );
+    }
     
     // Get the internal force vector.
 
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getIntForce_ ( force, state, state0, state00 );
+    getIntForce_ ( force, state, state0, stateExt_ );
+
+    stateI00_ = stateI0_;
+    stateI0_  = stateExt_;
 
     return true;
   }
@@ -408,6 +435,8 @@ bool PhaseFractureExtModel::takeAction
 
   if ( action == Actions::GET_MATRIX0 )
   {
+    using jive::implict::SolverInfo;
+
     Ref<MatrixBuilder>  mbuilder;
 
     Vector  state;
@@ -420,13 +449,33 @@ bool PhaseFractureExtModel::takeAction
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
+
+    Properties  info      = SolverInfo::get ( globdat );
+    idx_t       iterCount = 0; 
+    info.find   (  iterCount , SolverInfo::ITER_COUNT );
+
+    if ( iterCount == 0 && extFail_ == false )
+    {
+      stateExt_.resize( state.size() );
+      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
+
+      stateI0_ .resize( state.size() );   stateI0_  = 0.0;
+      stateI00_.resize( state.size() );   stateI00_ = 0.0;
+    }
+    else
+    {
+      // stateExt_ = stateI00_ + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( stateI0_ - stateI00_ );
+    }
     
     // Get the matrix builder and the internal force vector.
 
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( *mbuilder, force, state, state0, state00 );
+    getMatrix_ ( *mbuilder, force, state, state0, stateExt_ );
+
+    stateI00_ = stateI0_;
+    stateI0_  = stateExt_;
 
     return true;
   }
@@ -453,7 +502,7 @@ bool PhaseFractureExtModel::takeAction
   {
     // material_->commit (); // not required for linear elastic material
 
-    dt0_ = dt_;
+    oIter_ = 0;
 
     return true;
   }
@@ -461,9 +510,9 @@ bool PhaseFractureExtModel::takeAction
   /** CHECK_COMMIT: Can used to discard the current step
   */ 
 
-  if ( action == Actions::CHECK_COMMIT )
+  if ( action == XActions::CHECK_COMMIT )
   {
-    //checkCommit_ ( params );
+    checkCommit_ ( params, globdat );
     return true;
   }
 
@@ -491,7 +540,7 @@ bool PhaseFractureExtModel::takeAction
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getIntForce_
+void PhaseFractureExtItModel::getIntForce_
 
   ( const Vector&   force,
     const Vector&   state,
@@ -567,6 +616,10 @@ void PhaseFractureExtModel::getIntForce_
 
   double      gphiEx;
   double      dgphi;
+
+  // Set extrapolation error to zero
+
+  errExt_ = 0.0;
 
   // Iterate over all elements assigned to this model.
 
@@ -647,20 +700,9 @@ void PhaseFractureExtModel::getIntForce_
       double pf            = dot ( Nip, phi   );
       double pf0           = dot ( Nip, phi0  );
       double pf00          = dot ( Nip, phi00 );
-      double pfEx          = 0.0;
+      double pfEx          = pf00;
 
-      // Linearly extrapolate old old phase-field to current step
-
-      if (dt0_ < 1e-20 )
-      {
-        pfEx = pf0;
-      }
-      else
-      {
-        // pfEx              = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
-        // corrected Wick book
-        pfEx = - pf00 * dt_/dt0_ + pf0 * (dt_+dt0_)/dt0_;
-      }
+      errExt_             += ::pow( pf - pfEx, 2.0 );
       
       // Ensure extrapolated phase-field is within bounds [0,1]
 
@@ -744,7 +786,7 @@ void PhaseFractureExtModel::getIntForce_
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getMatrix_
+void PhaseFractureExtItModel::getMatrix_
 
   ( MatrixBuilder&  mbuilder,
     const Vector&   force,
@@ -830,6 +872,10 @@ void PhaseFractureExtModel::getMatrix_
   double      dgphi;
   double      ddgphi;
 
+  // Set extrapolation error to zero
+
+  errExt_ = 0.0;
+
   // Iterate over all elements assigned to this model.
 
   for ( int ie = 0; ie < ielemCount; ie++ )
@@ -914,20 +960,9 @@ void PhaseFractureExtModel::getMatrix_
       double pf            = dot ( Nip, phi   );
       double pf0           = dot ( Nip, phi0  );
       double pf00          = dot ( Nip, phi00 );
-      double pfEx          = 0.0;
+      double pfEx          = pf00;
 
-      // Linearly extrapolate old old phase-field to current step
-
-      if (dt0_ < 1e-20 )
-      {
-        pfEx = pf0;
-      }
-      else
-      {
-        // pfEx              = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
-        // corrected Wick book
-        pfEx = - pf00 * dt_/dt0_ + pf0 * (dt_+dt0_)/dt0_;
-      }
+      errExt_             += ::pow( pf - pfEx, 2.0 );
       
       // Ensure extrapolated phase-field is within bounds [0,1]
 
@@ -1032,7 +1067,7 @@ void PhaseFractureExtModel::getMatrix_
 // compute the mass matrix 
 // current implementation: consistent mass matrix
 
-void PhaseFractureExtModel::getMatrix2_
+void PhaseFractureExtItModel::getMatrix2_
 
     ( MatrixBuilder&          mbuilder )
 {
@@ -1116,7 +1151,7 @@ void PhaseFractureExtModel::getMatrix2_
 //-----------------------------------------------------------------------
 
 
-void  PhaseFractureExtModel::initializeIPMPMap_ ( )
+void  PhaseFractureExtItModel::initializeIPMPMap_ ( )
 
 {
   jive::IdxVector   ielems     = egroup_.getIndices  ();
@@ -1147,7 +1182,7 @@ void  PhaseFractureExtModel::initializeIPMPMap_ ( )
 //-----------------------------------------------------------------------
 
 
-bool PhaseFractureExtModel::getTable_
+bool PhaseFractureExtItModel::getTable_
 
   ( const Properties&  params,
     const Properties&  globdat )
@@ -1213,7 +1248,7 @@ bool PhaseFractureExtModel::getTable_
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getStress_
+void PhaseFractureExtItModel::getStress_
 
   ( XTable&        table,
     const Vector&  weights )
@@ -1332,7 +1367,7 @@ void PhaseFractureExtModel::getStress_
 //-----------------------------------------------------------------------
 
 
-void PhaseFractureExtModel::getStrain_
+void PhaseFractureExtItModel::getStrain_
 
   ( XTable&        table,
     const Vector&  weights )
@@ -1456,7 +1491,7 @@ void PhaseFractureExtModel::getStrain_
  *  components.
  */
 
-void PhaseFractureExtModel::getOutputData_
+void PhaseFractureExtItModel::getOutputData_
 
   ( Ref<XTable>    table,
     const Vector&  weights,
@@ -1562,11 +1597,58 @@ void PhaseFractureExtModel::getOutputData_
 //   checkCommit_
 //-----------------------------------------------------------------------
 
-void PhaseFractureExtModel::checkCommit_
+void PhaseFractureExtItModel::checkCommit_
 
-  ( const Properties&  params )
+  ( const Properties&  params,
+    const Properties&  globdat )
 
 {
+
+  using jive::model::StateVector;
+
+  Vector  state;
+
+  // Get the current state
+
+  StateVector::get ( state,   dofs_, globdat );
+
+  if ( ::sqrt(errExt_) > 1.e-4 )
+  {
+    oIter_++;
+
+    params.set ( XActions::DISCARD, false );
+    params.set ( XActions::ACCEPT , false );
+
+    System::out() << "Extrapolated phase-field not converged.\n  Error = " 
+                  << (::sqrt(errExt_)) << "\n  Outer Iter: "
+                  << oIter_ << "\n";
+
+    //stateExt_ = state;
+    //stateExt_ = stateExt_ - (1.5 * ( stateExt_ - state ));
+    //stateExt_ = stateExt_ - (1.1 * ( stateExt_ - state ));
+
+    stateExt_ *= 0.25;
+    stateExt_ += 0.75 * state;
+
+    // Atiken acceleration
+
+    // stateExt_ = state - ( state - stateExt0_ )^2 / ( state - 2.0 * stateExt0 + state00 )
+
+    /*for ( idx_t i = 0; i < state.size(); i++ )
+    {
+      stateExt_[i] = state[i] - ::pow( state[i] - stateI0_[i], 2.0 ) / 
+                      ( state[i] - 2.0 * stateI0_[i] + stateI00_[i] );
+    }*/                  
+
+    extFail_  = true;
+  }
+  else
+  {
+    extFail_ = false;
+  }
+
+  errExt_ = 0.0;
+
   // System::info() << myName_ << " : check commit ... do nothing!\n";
 }
 
@@ -1575,7 +1657,7 @@ void PhaseFractureExtModel::checkCommit_
 //   setStepSize_
 //-----------------------------------------------------------------------
 
-void PhaseFractureExtModel::setStepSize_
+void PhaseFractureExtItModel::setStepSize_
 
   ( const Properties&  params )
 
@@ -1588,6 +1670,7 @@ void PhaseFractureExtModel::setStepSize_
   params.get ( dt0, XProps::STEP_SIZE_0 );
 
   dt_  = dt;
+  dt0_ = dt0;
   
 }
 
@@ -1597,11 +1680,11 @@ void PhaseFractureExtModel::setStepSize_
 //=======================================================================
 
 //-----------------------------------------------------------------------
-//   newPhaseFractureExtModel
+//   newPhaseFractureExtItModel
 //-----------------------------------------------------------------------
 
 
-static Ref<Model>     newPhaseFractureExtModel
+static Ref<Model>     newPhaseFractureExtItModel
 
   ( const String&       name,
     const Properties&   conf,
@@ -1609,18 +1692,18 @@ static Ref<Model>     newPhaseFractureExtModel
     const Properties&   globdat )
 
 {
-  return newInstance<PhaseFractureExtModel> ( name, conf, props, globdat );
+  return newInstance<PhaseFractureExtItModel> ( name, conf, props, globdat );
 }
 
 
 //-----------------------------------------------------------------------
-//   declarePhaseFractureExtModel
+//   declarePhaseFractureExtItModel
 //-----------------------------------------------------------------------
 
 
-void declarePhaseFractureExtModel ()
+void declarePhaseFractureExtItModel ()
 {
   using jive::model::ModelFactory;
 
-  ModelFactory::declare ( "PhaseFractureExt", & newPhaseFractureExtModel );
+  ModelFactory::declare ( "PhaseFractureExtIt", & newPhaseFractureExtItModel );
 }
