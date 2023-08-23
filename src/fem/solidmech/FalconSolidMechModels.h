@@ -13,8 +13,10 @@ void  declareFalconSolidMechModels       ();
 void  declareLinearElasticityModel       ();
 void  declarePhaseFractureModel          ();
 void  declarePhaseFractureExtModel       ();
+void  declarePhaseFractureExtItModel     ();
 void  declareMicroPhaseFractureModel     ();
 void  declareMicroPhaseFractureExtModel  ();
+void  declareMicroPhaseFractureExtItModel();
 
 #endif
 
