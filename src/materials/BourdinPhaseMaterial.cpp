@@ -60,9 +60,7 @@ BourdinPhaseMaterial::BourdinPhaseMaterial
   elasticStiffMat_ = 0.0;
 
   stressP_.resize( STRAIN_COUNTS[rank_] );
-  
   stressP_ = 0.0;
-  Psi_     = 0.0;
 }
 
 

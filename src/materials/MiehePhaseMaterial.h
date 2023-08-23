@@ -106,8 +106,6 @@ class MiehePhaseMaterial : public Material,
 
   // Elastic properties
 
-  double                  young_;
-  double                  poisson_;
   double                  area_;
 
  private:

@@ -102,7 +102,7 @@ class Material : public Object
   virtual void           getHistory
 
     ( Vector&              hvals,
-      const idx_t          ipoint );
+      const idx_t          mpoint );
 
   inline void            getHistoryNames   
     
@@ -118,7 +118,7 @@ class Material : public Object
   virtual void           setHistory
 
     ( const Vector&        hvals,
-      const idx_t          ipoint );
+      const idx_t          mpoint );
 
   inline void            setYoung   ( double young   );
   inline void            setPoisson ( double poisson );  

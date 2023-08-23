@@ -25,9 +25,6 @@ Material::Material
 {
   desperateMode_ = false;
   rank_          = rank;
-
-  young_         = 1.0;
-  poisson_       = 0.0;
 }
 
 Material::~Material()
@@ -60,7 +57,7 @@ void Material::getConfig
 void Material::getHistory
 
   ( Vector&           hvals,
-    const idx_t       ipoint )
+    const idx_t       mpoint )
 
 {
   // Default implementation
@@ -74,7 +71,7 @@ void Material::getHistory
 void Material::setHistory
 
   ( const Vector&    hvals,
-    const idx_t      ipoint )
+    const idx_t      mpoint )
 
 {
   // Default implementation
@@ -233,13 +230,13 @@ Ref<Material>  newMaterial
   matConf.set  ( "rank", rank );
 
   if      ( type == "Hooke" )
-    mat = newInstance<HookeMaterial> ( rank, globdat );
+    mat = newInstance<HookeMaterial>        ( rank, globdat );
   else if ( type == "AmorPhase" )
-    mat = newInstance<AmorPhaseMaterial> ( rank, globdat );
+    mat = newInstance<AmorPhaseMaterial>    ( rank, globdat );
   else if ( type == "BourdinPhase" )
     mat = newInstance<BourdinPhaseMaterial> ( rank, globdat );
   else if ( type == "MiehePhase" )
-    mat = newInstance<MiehePhaseMaterial> ( rank, globdat );
+    mat = newInstance<MiehePhaseMaterial>   ( rank, globdat );
   else
     matProps.propertyError ( name, "Invalid material: " + type );
 
