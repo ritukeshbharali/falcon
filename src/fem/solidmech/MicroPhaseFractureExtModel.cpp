@@ -10,6 +10,10 @@
  *  Convexification is carried out based on extrapolation
  *  of the phase-field for the momentum balance equation
  *  (see DOI: 10.1016/j.cma.2015.03.009).
+ * 
+ *  Please consider citing the corresponding article
+ *  (doi:10.1007/s00466-023-02380-1), if the code benefits
+ *  you.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  

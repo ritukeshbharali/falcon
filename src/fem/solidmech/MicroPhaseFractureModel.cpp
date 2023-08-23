@@ -6,6 +6,10 @@
  *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
  *  irreversibility is enforced using the history variable
  *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
+ * 
+ *  Please consider citing the corresponding article
+ *  (doi:10.1007/s00466-023-02380-1), if the code benefits 
+ *  you.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
