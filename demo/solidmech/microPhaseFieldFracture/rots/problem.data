@@ -1,0 +1,14 @@
+
+<!-- Include the finite element mesh data from another file -->
+
+<Include source="problem.mesh"/>
+
+<!-- Define the constraints (supports). -->
+
+<NodeConstraints>
+
+  dy[FixedNodes] = 0.0;
+  dx[FixedNodes] = 0.0;
+  dy[RollerNodes] = 0.0;
+
+</NodeConstraints>
