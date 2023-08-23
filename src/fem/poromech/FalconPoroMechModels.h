@@ -10,6 +10,8 @@
 
 void  declareFalconPoroMechModels                  ();
 void  declareSaturatedPorousModel                  ();
+void  declareSaturatedPorousFractureModel          ();
+void  declareSaturatedPorousMicroFractureModel     ();
 void  declareTwoPhaseUnsaturatedPorousModel        ();
 
 #endif
