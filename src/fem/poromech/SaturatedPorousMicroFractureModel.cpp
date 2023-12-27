@@ -1084,13 +1084,9 @@ void SaturatedPorousMicroFractureModel::getMatrix_
         dphidStrain = 0.0;
         dphidd = 0.0;
       }
-
-      gphi_n  = ::pow( 1.0 - d, p_);
-      gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
-                         a1_*a2_*a3_*d*d*d;
       
       gphi_n  = ::pow( 1.0 - d, p_);
-        gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+      gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
                              a1_*a2_*a3_*d*d*d;
 
       dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0 ) );
