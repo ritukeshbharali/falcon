@@ -1,12 +1,7 @@
 
 /** @file MicroPhaseFractureExtItModel.h
- *  @brief Implements the micromorphic phase-field fracture
- *         model with extrapolation.
- *  
- *  This class implements the unified phase-field fracture
- *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
- *  irreversibility is enforced using the history variable
- *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
+ *  @brief Micromorphic phase-field fracture model with 
+ *         extrapolation and correction.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
@@ -15,6 +10,10 @@
  *     - [06 August 2022] replaced hard-coded Amor phase
  *       field model with generic material update to
  *       different phase-field material models. (RB)
+ * 
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  */
 
 /* Include c++ headers */
@@ -97,7 +96,8 @@ typedef ElementGroup           ElemGroup;
 /** @brief 
  *  The MicroPhaseFractureExtItModel class implements a micromorphic phase
  *  -field fracture FE Model with extrapolation based convexification 
- *  technique.
+ *  technique and subsequent corrective iterations. 
+ *  <a href="https://link.springer.com/article/10.1007/s00466-023-02380-1" target="_blank">Link to Article</a>
  */
 
 class MicroPhaseFractureExtItModel : public Model
@@ -106,7 +106,7 @@ class MicroPhaseFractureExtItModel : public Model
  public:
 
   typedef MicroPhaseFractureExtItModel  Self;
-  typedef Model                       Super;
+  typedef Model                         Super;
 
   static const char*        DISP_NAMES[3];
   static const char*        SHAPE_PROP;
@@ -158,18 +158,11 @@ class MicroPhaseFractureExtItModel : public Model
 
  private:
 
-  void                      getIntForce_
-
-    ( const Vector&           force,
-      const Vector&           state,
-      const Vector&           stateExt );
-
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
-      const Vector&           state,
-      const Vector&           stateExt );
+      const Vector&           state    );
 
   void                      getMatrix2_
 
@@ -289,20 +282,20 @@ class MicroPhaseFractureExtItModel : public Model
 
   struct                  hist_
   {
-    Flex<double>            phasef_ ;     // phase-field variable
+    Flex<double>          phasef_ ;     // phase-field variable
   };
 
   hist_                   preHist_;      // history of the previous load step
   hist_                   newHist_;      // history of the current iteration
 
+  // Extrapolated state vector
+
   Vector stateExt_;
+
+  // Extrapolation-related variables
 
   double errExt_;
   bool   extFail_;
   idx_t  oIter_;
-
-  // Out file
-  String                    file_;
-  Ref<PrintWriter>          out_;
 
 };

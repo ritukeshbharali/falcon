@@ -1,28 +1,21 @@
 
 /** @file PhaseFractureExtItModel.cpp
- *  @brief Implements a extrapolation-based convexified phase-field 
- *         fracture model.
- *  
- *  This class implements the unified phase-field fracture
- *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
- *  irreversibility is enforced using the penalization 
- *  approach (see DOI: 10.1016/j.cma.2019.05.038). The
- *  fracture driving and resisting energies are obtained
- *  using Amor split (see DOI: 10.1016/j.jmps.2009.04.011).
- *  Convexification is carried out based on extrapolation
- *  of the phase-field for the momentum balance equation
- *  (see DOI: 10.1016/j.cma.2015.03.009).
- *  
- *  Author: R. Bharali, ritukesh.bharali@chalmers.se
- *  Date: 30 March 2022
+ *  @brief Phase-field fracture model with 
+ *         extrapolation and correction.
  * 
- *  @note This model must be run with ReduceStepping
- *        Module.
- *  
+ *  Author: R. Bharali, ritukesh.bharali@chalmers.se
+ *  Date: 02 March 2022
+ *
  *  Updates (when, what and who)
- *     - [14 June 2022], added getIntForce_ and removed
- *       getHistory_. getIntForce_ is required for line
- *       search operations. (RB)
+ *     - [25 March 2022] added option for integration
+ *       point averaged element data. getElemStress_
+ *       and getElemStrain_ are the new functions.
+ *       (RB)
+ * 
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ * 
  */
 
 /* Include jem and jive headers */
@@ -409,24 +402,15 @@ bool PhaseFractureExtItModel::takeAction
     if ( iterCount == 0 && extFail_ == false )
     {
       stateExt_.resize( state.size() );
-      stateI0_ .resize( state.size() );   stateI0_  = 0.0;
-      stateI00_.resize( state.size() );   stateI00_ = 0.0;
 
       stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
-    }
-    else
-    {
-      // stateExt_ = stateI00_ + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( stateI0_ - stateI00_ );
     }
     
     // Get the internal force vector.
 
-    params.get ( force,    ActionParams::INT_VECTOR );
+    params.get ( force, ActionParams::INT_VECTOR );
 
-    getIntForce_ ( force, state, state0, stateExt_ );
-
-    stateI00_ = stateI0_;
-    stateI0_  = stateExt_;
+    getMatrix_ ( nullptr, force, state, state0 );
 
     return true;
   }
@@ -458,13 +442,6 @@ bool PhaseFractureExtItModel::takeAction
     {
       stateExt_.resize( state.size() );
       stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
-
-      stateI0_ .resize( state.size() );   stateI0_  = 0.0;
-      stateI00_.resize( state.size() );   stateI00_ = 0.0;
-    }
-    else
-    {
-      // stateExt_ = stateI00_ + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( stateI0_ - stateI00_ );
     }
     
     // Get the matrix builder and the internal force vector.
@@ -472,10 +449,7 @@ bool PhaseFractureExtItModel::takeAction
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( *mbuilder, force, state, state0, stateExt_ );
-
-    stateI00_ = stateI0_;
-    stateI0_  = stateExt_;
+    getMatrix_ ( mbuilder, force, state, state0 );
 
     return true;
   }
@@ -536,263 +510,16 @@ bool PhaseFractureExtItModel::takeAction
 
 
 //-----------------------------------------------------------------------
-//   getIntForce_
-//-----------------------------------------------------------------------
-
-
-void PhaseFractureExtItModel::getIntForce_
-
-  ( const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0,
-    const Vector&   state00 )
-
-{
-  IdxVector   ielems     = egroup_.getIndices ();
-
-  const int   ielemCount = ielems.size         ();
-  const int   nodeCount  = shape_->nodeCount   ();
-  const int   ipCount    = shape_->ipointCount ();
-  const int   strCount   = STRAIN_COUNTS[rank_];
-
-  // number of displacement and phase-field dofs
-
-  const int   dispCount  = nodeCount * rank_;  
-  const int   phiCount   = nodeCount;
-
-  Cubix       grads      ( rank_, nodeCount, ipCount );
-  Matrix      coords     ( rank_, nodeCount );
-
-  // current element vector state:
-  // displacement and phase-field
-  
-  Vector      disp       ( dispCount );
-  Vector      phi        ( phiCount );
-
-  // old step element vector state:
-  // phase-field
-  
-  Vector      phi0       ( phiCount );
-
-  // old old step element vector state:
-  // phase-field
-  
-  Vector      phi00       ( phiCount );
-
-  // current
-
-  Matrix      stiff      ( strCount, strCount );
-  Vector      stress     ( strCount );
-  Vector      strain     ( strCount );
-  Vector      stressP    ( strCount );
-
-  // internal force vector:
-  // displacement and phase-field
-
-  Vector      elemForce1 ( dispCount );
-  Vector      elemForce2 ( phiCount  );
-  
-  // B matrices
-  // displacement and phase-field
-  
-  Matrix      bd         ( strCount, dispCount );
-  Matrix      bdt        = bd.transpose ();
-
-  Matrix      be         ( rank_, phiCount );
-  Matrix      bet        = be.transpose ();
-  
-  IdxVector   inodes     ( nodeCount );
-  IdxVector   phiDofs    ( phiCount  );
-  IdxVector   dispDofs   ( dispCount );
-
-  Vector      ipWeights  ( ipCount   );
-
-  MChain1     mc1;
-  MChain2     mc2;
-  MChain3     mc3;
-  MChain4     mc4; 
-  
-  double      wip;
-
-  double      gphiEx;
-  double      dgphi;
-
-  // Set extrapolation error to zero
-
-  errExt_ = 0.0;
-
-  // Iterate over all elements assigned to this model.
-
-  for ( int ie = 0; ie < ielemCount; ie++ )
-  {
-
-    if ( ! isActive_[ie] )
-    {      
-      continue;
-    }
-
-    // Get the global element index.
-
-    int  ielem = ielems[ie];
-
-    // Get the element coordinates and DOFs.
-
-    elems_.getElemNodes  ( inodes,   ielem  );
-    nodes_.getSomeCoords ( coords,   inodes );
-    dofs_->getDofIndices ( phiDofs, inodes, phiTypes_ );
-    dofs_->getDofIndices ( dispDofs, inodes, dispTypes_ );
-
-    // Compute the spatial derivatives of the element shape
-    // functions in the integration points.
-
-    shape_->getShapeGradients ( grads, ipWeights, coords );
-
-    // Get the shape function
-
-    Matrix N  = shape_->getShapeFunctions ();
-    
-    // Get current element displacements and phase-fields
-
-    phi   = select ( state, phiDofs  );
-    disp  = select ( state, dispDofs );
-
-    // Get old step and old old step element phase-field
-
-    phi0  = select ( state0,  phiDofs );
-    phi00 = select ( state00, phiDofs );
-
-    // Initialize the internal forces
-    // and the tangent stiffness matrix
-    
-    elemForce1 = 0.0;
-    elemForce2 = 0.0; 
-
-    // Loop on integration points 
-    
-    for ( int ip = 0; ip < ipCount; ip++ )
-    {
-
-      // Get the corresponding material point ipoint
-      // of element ielem integration point ip from the mapping
-
-      int ipoint = ipMpMap_ ( ielem, ip );
-
-      // Compute the displacement B-matrix for this integration point.
-
-      getShapeGrads_ ( bd, grads(ALL,ALL,ip) );
-
-      // Get B-matrix associated with phase-field dofs
-      
-      be =  grads(ALL,ALL,ip);
-
-      // Compute the strain for this integration point.
-
-      matmul ( strain,  bd, disp  );
-
-      // Store the regular strain components.
-
-      strain_(slice(BEGIN,strCount),ipoint) = strain;
-
-      // Compute the integration point phase-fields (current, old, old old)
-
-      Vector Nip           = N( ALL,ip );
-
-      double pf            = dot ( Nip, phi   );
-      double pf0           = dot ( Nip, phi0  );
-      double pf00          = dot ( Nip, phi00 );
-      double pfEx          = pf00;
-
-      errExt_             += ::pow( pf - pfEx, 2.0 );
-      
-      // Ensure extrapolated phase-field is within bounds [0,1]
-
-      if ( pfEx < 0.0 )
-      {
-        pfEx = 0.0;
-      }
-      else if ( pfEx > 1.0 )
-      {
-        pfEx = 1.0;
-      }
-
-      // Compute the degradation function with the extrapolated phase-field
-
-      {
-        double gphiEx_n    = ::pow( 1- pfEx, p_);
-        double gphiEx_d    = gphiEx_n + a1_*pfEx + a1_*a2_*pfEx*pfEx + 
-                             a1_*a2_*a3_*pfEx*pfEx*pfEx;
-        gphiEx             = gphiEx_n/gphiEx_d + 1.e-7;
-
-      }
-
-      strain_(strCount,ipoint) = gphiEx;
-
-      // Compute the degradation function derivatives with the current phase-field
-
-      {
-        double gphi_n    = ::pow( 1- pf, p_);
-        double gphi_d    = gphi_n + a1_*pf + a1_*a2_*pf*pf + a1_*a2_*a3_*pf*pf*pf;
-
-        double dgphi_n   = - p_ * ( ::pow( 1- pf, p_- 1) );
-        double dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*pf + 3.0*a1_*a2_*a3_*pf*pf;
-
-        dgphi            = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
-      }
-
-      // Compute the locally dissipated fracture energy function derivative
-
-      double dw        = eta_ + 2.0 * ( 1- eta_ ) * pf;
-
-      // Compute stress and material tangent stiffness
-
-      phaseMaterial_->update ( stress, stiff, strain, gphiEx, ipoint );
-
-      // Get fracture driving energy
-
-      double Psi = phaseMaterial_->givePsi();
-      Psi        = max(Psi,Psi0_);
-
-      // Compute stiffness matrix components
-
-      wip         = ipWeights[ip];
-     
-      // Compute internal forces
-
-      elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
-      elemForce2 +=  wip * ( Nip * ( gc_/(cw_*l0_) * dw + dgphi * Psi) 
-                     + (2.0 * gc_*l0_/cw_) 
-                     * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );
-
-      // Penalization (enforce fracture irreversibility) 
-
-      if ( pf0 - pf > 1.e-15 )
-      {
-        double Dpf = pf0 - pf;
-        elemForce2 -= wip * ( gc_/(cw_*l0_) * beta_ * Dpf ) * Nip;
-      }   
-
-    }  // End of loop on integration points
-
-    // Assembly ...
-
-    select ( force, dispDofs ) += elemForce1;
-    select ( force, phiDofs  ) += elemForce2;
-  }
-}
-
-
-//-----------------------------------------------------------------------
 //   getMatrix_
 //-----------------------------------------------------------------------
 
 
 void PhaseFractureExtItModel::getMatrix_
 
-  ( MatrixBuilder&  mbuilder,
-    const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0,
-    const Vector&   state00 )
+  ( Ref<MatrixBuilder>  mbuilder,
+    const Vector&       force,
+    const Vector&       state,
+    const Vector&       state0 )
 
 {
   IdxVector   ielems     = egroup_.getIndices ();
@@ -824,7 +551,7 @@ void PhaseFractureExtItModel::getMatrix_
   // old old step element vector state:
   // phase-field
   
-  Vector      phi00       ( phiCount );
+  Vector      phiEx       ( phiCount );
 
   // current
 
@@ -842,7 +569,6 @@ void PhaseFractureExtItModel::getMatrix_
   // element stiffness matrices (four components)
 
   Matrix      elemMat1   ( dispCount, dispCount ); // disp-disp
-  Matrix      elemMat2   ( dispCount, phiCount  ); // disp-phi
   Matrix      elemMat3   ( phiCount,  dispCount ); // phi-disp
   Matrix      elemMat4   ( phiCount,  phiCount  ); // phi-phi
   
@@ -913,8 +639,8 @@ void PhaseFractureExtItModel::getMatrix_
 
     // Get old step and old old step element phase-field
 
-    phi0  = select ( state0,  phiDofs );
-    phi00 = select ( state00, phiDofs );
+    phi0  = select ( state0,    phiDofs );
+    phiEx = select ( stateExt_, phiDofs );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
@@ -922,10 +648,12 @@ void PhaseFractureExtItModel::getMatrix_
     elemForce1 = 0.0;
     elemForce2 = 0.0;
 
-    elemMat1   = 0.0;
-    elemMat2   = 0.0;
-    elemMat3   = 0.0;
-    elemMat4   = 0.0;  
+    if ( mbuilder != nullptr )
+    {
+      elemMat1   = 0.0;
+      elemMat3   = 0.0;
+      elemMat4   = 0.0;
+    }
 
     // Loop on integration points 
     
@@ -959,8 +687,7 @@ void PhaseFractureExtItModel::getMatrix_
 
       double pf            = dot ( Nip, phi   );
       double pf0           = dot ( Nip, phi0  );
-      double pf00          = dot ( Nip, phi00 );
-      double pfEx          = pf00;
+      double pfEx          = dot ( Nip, phiEx );
 
       errExt_             += ::pow( pf - pfEx, 2.0 );
       
@@ -1020,14 +747,20 @@ void PhaseFractureExtItModel::getMatrix_
       stressP    = phaseMaterial_->giveDerivPsi();
       Psi        = max(Psi,Psi0_);
 
-      // Compute stiffness matrix components
+      // Compute weight of ip
 
       wip         = ipWeights[ip];
-      elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
-      elemMat3   += wip * dgphi * ( matmul ( Nip, matmul(stressP, bd) ) );
-      elemMat4   += wip * ( ( gc_/(cw_*l0_) * ddw + ddgphi * Psi) 
+
+      // Compute stiffness matrix components
+
+      if ( mbuilder != nullptr )
+      {
+        elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
+        elemMat3   += wip * dgphi * ( matmul ( Nip, matmul(stressP, bd) ) );
+        elemMat4   += wip * ( ( gc_/(cw_*l0_) * ddw + ddgphi * Psi) 
                     * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) 
                     * mc2. matmul ( bet, be ) );
+      }
      
       // Compute internal forces
 
@@ -1040,19 +773,22 @@ void PhaseFractureExtItModel::getMatrix_
 
       if ( pf0 - pf > 1.e-15 )
       {
-        double Dpf = pf0 - pf;
-        elemMat4   += wip * ( gc_/(cw_*l0_) * beta_ * matmul ( Nip, Nip ) );
-        elemForce2 -= wip * ( gc_/(cw_*l0_) * beta_ * Dpf ) * Nip;
+        if ( mbuilder != nullptr )
+          elemMat4   += wip * ( gc_/(cw_*l0_) * beta_ * matmul ( Nip, Nip ) );
+
+        elemForce2 -= wip * ( gc_/(cw_*l0_) * beta_ * (pf0 - pf )) * Nip;
       }   
 
     }  // End of loop on integration points
 
     // Assembly ...
 
-    mbuilder.addBlock ( dispDofs, dispDofs, elemMat1 );
-    mbuilder.addBlock ( dispDofs, phiDofs,  elemMat2 );
-    mbuilder.addBlock ( phiDofs,  dispDofs, elemMat3 );
-    mbuilder.addBlock ( phiDofs,  phiDofs,  elemMat4 );
+    if ( mbuilder != nullptr )
+    {
+      mbuilder -> addBlock ( dispDofs, dispDofs, elemMat1 );
+      mbuilder -> addBlock ( phiDofs,  dispDofs, elemMat3 );
+      mbuilder -> addBlock ( phiDofs,  phiDofs,  elemMat4 );
+    }
 
     select ( force, dispDofs ) += elemForce1;
     select ( force, phiDofs  ) += elemForce2;
@@ -1570,8 +1306,6 @@ void PhaseFractureExtItModel::getOutputData_
       double gphi = strain_(strCount,igpoint);
 
       phaseMaterial_->update ( stress, stiff, strain, gphi, ipoint );
- 
-      //funcs = abs ( funcs );
 
        // apply the filter now, only cols specified by i2table are 
        // written to the table 
@@ -1623,22 +1357,8 @@ void PhaseFractureExtItModel::checkCommit_
                   << (::sqrt(errExt_)) << "\n  Outer Iter: "
                   << oIter_ << "\n";
 
-    //stateExt_ = state;
-    //stateExt_ = stateExt_ - (1.5 * ( stateExt_ - state ));
-    //stateExt_ = stateExt_ - (1.1 * ( stateExt_ - state ));
-
     stateExt_ *= 0.25;
     stateExt_ += 0.75 * state;
-
-    // Atiken acceleration
-
-    // stateExt_ = state - ( state - stateExt0_ )^2 / ( state - 2.0 * stateExt0 + state00 )
-
-    /*for ( idx_t i = 0; i < state.size(); i++ )
-    {
-      stateExt_[i] = state[i] - ::pow( state[i] - stateI0_[i], 2.0 ) / 
-                      ( state[i] - 2.0 * stateI0_[i] + stateI00_[i] );
-    }*/                  
 
     extFail_  = true;
   }
@@ -1649,7 +1369,6 @@ void PhaseFractureExtItModel::checkCommit_
 
   errExt_ = 0.0;
 
-  // System::info() << myName_ << " : check commit ... do nothing!\n";
 }
 
 

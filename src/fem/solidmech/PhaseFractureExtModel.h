@@ -1,9 +1,7 @@
 
-/** @file PhaseFractureExtModel.cpp
- *  @brief Implements the linear elasticity model.
- *  
- *  This class implements a finite element model with
- *  linear elastic material law.
+/** @file PhaseFractureExtModel.h
+ *  @brief Phase-field fracture model with 
+ *         extrapolation
  * 
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 02 March 2022
@@ -13,6 +11,10 @@
  *       point averaged element data. getElemStress_
  *       and getElemStrain_ are the new functions.
  *       (RB)
+ * 
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  * 
  */
 
@@ -92,8 +94,8 @@ typedef ElementGroup           ElemGroup;
 //=======================================================================
 
 /** @brief 
- *  The PhaseFractureExtModel class implements a phase-field fracture
- *  FE Model using extrapolation technique.
+ *  The PhaseFractureExtModel class implements the unified phase-field 
+ *  fracture FE Model using extrapolation technique.
  */
 
 class PhaseFractureExtModel : public Model
@@ -154,16 +156,9 @@ class PhaseFractureExtModel : public Model
 
  private:
 
-  void                      getIntForce_
-
-    ( const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0,
-      const Vector&           state00 );
-
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
       const Vector&           state,
       const Vector&           state0,

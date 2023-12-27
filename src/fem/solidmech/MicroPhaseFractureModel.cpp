@@ -1,16 +1,7 @@
 
 /** @file MicroPhaseFractureModel.cpp
- *  @brief Implements the micromorphic phase-field fracture.
- *  
- *  This class implements the unified phase-field fracture
- *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
- *  irreversibility is enforced using the history variable
- *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
- * 
- *  Please consider citing the corresponding article
- *  (doi:10.1007/s00466-023-02380-1), if the code benefits 
- *  you.
- *  
+ *  @brief Micromorphic phase-field fracture.
+ *
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
  *
@@ -18,6 +9,10 @@
  *     - [06 August 2022] replaced hard-coded Amor phase
  *       field model with generic material update to
  *       different phase-field material models. (RB)
+ * 
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  */
 
 /* Include jem and jive headers */
@@ -396,13 +391,13 @@ bool MicroPhaseFractureModel::takeAction
 
     // Get the current state.
 
-    StateVector::get       ( state,   dofs_, globdat );
+    StateVector::get ( state, dofs_, globdat );
     
     // Get the internal force vector.
 
-    params.get ( force,    ActionParams::INT_VECTOR );
+    params.get ( force, ActionParams::INT_VECTOR );
 
-    getIntForce_ ( force, state );
+    getMatrix_ ( nullptr, force, state );
 
     return true;
   }
@@ -418,14 +413,14 @@ bool MicroPhaseFractureModel::takeAction
 
     // Get the current state.
 
-    StateVector::get       ( state,   dofs_, globdat );
+    StateVector::get ( state, dofs_, globdat );
     
     // Get the matrix builder and the internal force vector.
 
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( *mbuilder, force, state );
+    getMatrix_ ( mbuilder, force, state );
 
     return true;
   }
@@ -488,270 +483,15 @@ bool MicroPhaseFractureModel::takeAction
 
 
 //-----------------------------------------------------------------------
-//   getIntForce_
-//-----------------------------------------------------------------------
-
-
-void MicroPhaseFractureModel::getIntForce_
-
-  ( const Vector&   force,
-    const Vector&   state )
-
-{
-
-  IdxVector   ielems     = egroup_.getIndices ();
-
-  const int   ielemCount = ielems.size         ();
-  const int   nodeCount  = shape_->nodeCount   ();
-  const int   ipCount    = shape_->ipointCount ();
-  const int   strCount   = STRAIN_COUNTS[rank_];
-
-  // number of displacement and micromorphic variable dofs
-
-  const int   dispCount  = nodeCount * rank_;  
-  const int   phiCount   = nodeCount;
-
-  Cubix       grads      ( rank_, nodeCount, ipCount );
-  Matrix      coords     ( rank_, nodeCount );
-
-  // current element vector state:
-  // displacement and micromorphic variable
-  
-  Vector      disp       ( dispCount );
-  Vector      phi        ( phiCount );
-
-  // current
-
-  Matrix      stiffP     ( strCount, strCount );
-  Matrix      stiffN     ( strCount, strCount );
-  Vector      stress     ( strCount );
-  Vector      stressP    ( strCount );
-  Vector      stressN    ( strCount );
-  Vector      strain     ( strCount );
-
-  // internal force vector:
-  // displacement and micromorphic variable
-
-  Vector      elemForce1 ( dispCount );
-  Vector      elemForce2 ( phiCount  );
-  
-  // B matrices
-  // displacement and phase-field
-  
-  Matrix      bd         ( strCount, dispCount );
-  Matrix      bdt        = bd.transpose ();
-
-  Matrix      be         ( rank_, phiCount );
-  Matrix      bet        = be.transpose ();
-  
-  IdxVector   inodes     ( nodeCount );
-  IdxVector   phiDofs    ( phiCount  );
-  IdxVector   dispDofs   ( dispCount );
-
-  Vector      ipWeights  ( ipCount   );
-
-  MChain1     mc1;
-  MChain2     mc2;
-  MChain3     mc3;
-  MChain4     mc4; 
-  
-  double      wip;
-  double      gphi;
-
-  const double alpha   = beta_ * gc_/l0_;
-
-  // Iterate over all elements assigned to this model.
-
-  for ( int ie = 0; ie < ielemCount; ie++ )
-  {
-
-    if ( ! isActive_[ie] )
-    {      
-      continue;
-    }
-
-    // Get the global element index.
-
-    int  ielem = ielems[ie];
-
-    // Get the element coordinates and DOFs.
-
-    elems_.getElemNodes  ( inodes,   ielem  );
-    nodes_.getSomeCoords ( coords,   inodes );
-    dofs_->getDofIndices ( phiDofs, inodes, phiTypes_ );
-    dofs_->getDofIndices ( dispDofs, inodes, dispTypes_ );
-
-    // Compute the spatial derivatives of the element shape
-    // functions in the integration points.
-
-    shape_->getShapeGradients ( grads, ipWeights, coords );
-
-    // Get the shape function
-
-    Matrix N  = shape_->getShapeFunctions ();
-    
-    // Get current element displacements and micromorphic variables
-
-    phi   = select ( state, phiDofs  );
-    disp  = select ( state, dispDofs );
-
-    // Initialize the internal forces
-    // and the tangent stiffness matrix
-    
-    elemForce1 = 0.0;
-    elemForce2 = 0.0;  
-
-    // Loop on integration points 
-    
-    for ( int ip = 0; ip < ipCount; ip++ )
-    {
-
-      // Get the corresponding material point ipoint
-      // of element ielem integration point ip from the mapping
-
-      int ipoint = ipMpMap_ ( ielem, ip );
-
-      // Compute the displacement B-matrix for this integration point.
-
-      getShapeGrads_ ( bd, grads(ALL,ALL,ip) );
-
-      // Get B-matrix associated with phase-field dofs
-      
-      be =  grads(ALL,ALL,ip);
-
-      // Compute the strain for this integration point.
-
-      matmul ( strain,  bd, disp  );
-
-      // Store the regular strain components.
-
-      strain_(slice(BEGIN,strCount),ipoint) = strain;
-
-      // Get positive/negative stress and material tangent stiffness
-
-      phaseMaterial_-> update ( stressP, stressN, stiffP, stiffN, strain, ipoint );
-
-      double Psi  = phaseMaterial_->givePsi();
-      Psi         = max(Psi,Psi0_);
-
-      // Compute the integration point micromorphic variables (current, old, old old)
-
-      Vector Nip           = N   ( ALL,ip   );
-      double pf            = dot ( Nip, phi );
-
-      // Compute local phase-field (d) iteratively
-
-      const double d0    = preHist_.phasef_[ipoint];
-      double d           = d0;
-
-      double gphi_n      = ::pow( 1.0 - d, p_);
-      double gphi_d      = gphi_n + a1_*d + a1_*a2_*d*d + 
-                             a1_*a2_*a3_*d*d*d;
-
-      double dgphi_n     = - p_ * ( ::pow( 1.0 - d, p_- 1) );
-      double dgphi_d     = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
-
-      double ddgphi_n    = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0) );
-      double ddgphi_d    = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
-
-      double dgphi       = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
-      double ddgphi      = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
-                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
-
-      double dw          = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
-      double ddw         = 2.0 * ( 1.0 - eta_ );
-
-      double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
-      double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
-
-      // int iter = 0;
-
-      // Carry out the iterative procedure
-
-      while ( abs(Res) > 1.e-4 )
-      {
-
-        // Increase iteration counter 
-        // iter   += 1;        
-        
-        // Update local phase-field
-        d      -= Res/J;
-
-        // Compute required quantities
-
-        gphi_n    = ::pow( 1.0 - d, p_);
-        gphi_d    = gphi_n + a1_*d + a1_*a2_*d*d + 
-                             a1_*a2_*a3_*d*d*d;
-
-        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0) );
-        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
-
-        ddgphi_n  = p_ * (p_ - 1.0) * ( ::pow( 1.0- d, p_- 2.0) );
-        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
-
-        // double gphi      = gphi_n/gphi_d;
-        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
-        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
-                    ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / 
-                    ( gphi_d * gphi_d * gphi_d );  
-
-        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
-        ddw       = 2.0 * ( 1.0 - eta_ );
-
-        // Compute new residual and Jacobian
-        
-        Res       = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
-        J         = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
-
-      }
-
-      // Enforce bounds on the phase-field
-
-      d = max ( d, d0 );
-      d = max ( d, 0. );
-      d = min ( d, 1. );
-
-      gphi_n  = ::pow( 1.0 - d, p_);
-      gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
-                         a1_*a2_*a3_*d*d*d;
-      
-      gphi    = gphi_n/gphi_d;
-
-      strain_(strCount,ipoint) = gphi;   
-
-      newHist_.phasef_[ipoint] = d; 
-
-      // Compute material stress
-
-      stress = gphi * stressP + stressN;
-     
-      // Compute internal forces
-
-      wip         = ipWeights[ip];
-      
-      elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
-      elemForce2 +=  wip * ( alpha * ( pf - d ) *  Nip + (2.0 * gc_*l0_/cw_) * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );  
-
-    }  // End of loop on integration points
-
-    // Assembly ...
-
-    select ( force, dispDofs ) += elemForce1;
-    select ( force, phiDofs  ) += elemForce2;
-  }
-}
-
-
-//-----------------------------------------------------------------------
 //   getMatrix_
 //-----------------------------------------------------------------------
 
 
 void MicroPhaseFractureModel::getMatrix_
 
-  ( MatrixBuilder&  mbuilder,
-    const Vector&   force,
-    const Vector&   state  )
+  ( Ref<MatrixBuilder>  mbuilder,
+    const Vector&       force,
+    const Vector&       state  )
 
 {
 
@@ -867,10 +607,13 @@ void MicroPhaseFractureModel::getMatrix_
     elemForce1 = 0.0;
     elemForce2 = 0.0;
 
-    elemMat1   = 0.0;
-    elemMat2   = 0.0;
-    elemMat3   = 0.0;
-    elemMat4   = 0.0;    
+    if ( mbuilder != nullptr )
+    {
+      elemMat1   = 0.0;
+      elemMat2   = 0.0;
+      elemMat3   = 0.0;
+      elemMat4   = 0.0;
+    }
 
     // Loop on integration points 
     
@@ -1049,14 +792,21 @@ void MicroPhaseFractureModel::getMatrix_
       stiff  = gphi * stiffP  + stiffN;
       stress = gphi * stressP + stressN;
 
+      // Compute weight of ip
+
+      wip    = ipWeights[ip];
+
       // Compute stiffness matrix components
 
-      wip         = ipWeights[ip];
-      elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
-      elemMat1   += wip * dgphi * mc3.matmul ( bdt, matmul(stressP,dphidStrain), bd );
-      elemMat2   += wip * dgphi * dphidd * ( matmul ( bdt, matmul(stressP, Nip) ) );
-      elemMat3   -= wip * alpha * ( matmul ( Nip, matmul(dphidStrain, bd) ) );
-      elemMat4   += wip * ( alpha * ( 1.0 - dphidd ) * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) * mc2. matmul ( bet, be ) );
+      if ( mbuilder != nullptr )
+      {
+        elemMat1 += wip * mc3.matmul ( bdt, stiff, bd );
+        elemMat1 += wip * dgphi * mc3.matmul ( bdt, matmul(stressP,dphidStrain), bd );
+        elemMat2 += wip * dgphi * dphidd * ( matmul ( bdt, matmul(stressP, Nip) ) );
+        elemMat3 -= wip * alpha * ( matmul ( Nip, matmul(dphidStrain, bd) ) );
+        elemMat4 += wip * ( alpha * ( 1.0 - dphidd ) * matmul ( Nip, Nip ) 
+                            + (2.0 * gc_*l0_/cw_) * mc2. matmul ( bet, be ) );
+      }
      
       // Compute internal forces
 
@@ -1067,10 +817,13 @@ void MicroPhaseFractureModel::getMatrix_
 
     // Assembly ...
 
-    mbuilder.addBlock ( dispDofs, dispDofs, elemMat1 );
-    mbuilder.addBlock ( dispDofs, phiDofs,  elemMat2 );
-    mbuilder.addBlock ( phiDofs,  dispDofs, elemMat3 );
-    mbuilder.addBlock ( phiDofs,  phiDofs,  elemMat4 );
+    if ( mbuilder != nullptr )
+    {
+      mbuilder -> addBlock ( dispDofs, dispDofs, elemMat1 );
+      mbuilder -> addBlock ( dispDofs, phiDofs,  elemMat2 );
+      mbuilder -> addBlock ( phiDofs,  dispDofs, elemMat3 );
+      mbuilder -> addBlock ( phiDofs,  phiDofs,  elemMat4 );
+    }
 
     select ( force, dispDofs ) += elemForce1;
     select ( force, phiDofs  ) += elemForce2;

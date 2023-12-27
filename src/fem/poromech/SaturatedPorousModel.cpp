@@ -1,19 +1,12 @@
+
 /** @file SaturatedPorousModel.cpp
- *  @brief Implements saturated porous media model.
- *  
- *  This class implements the fully saturated porous media 
- *  model with two phases - solid and fluid. The effect of
- *  gravity is absent. The fluid pressure equation is 
- *  stabilized via perturbation (see DOI: 10.1002/nme2295).
+ *  @brief Saturated porous media model.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 04 March 2022
  * 
- *  NOTE: Stiffness matrix is unsymmetric, choose the linear
- *        solver accordingly. Stabilization works only for 
- *        Triangle3 elements.
- * 
- *  TO-DO: Anisotropic permeability
+ *  @note Stiffness matrix is unsymmetric, choose the linear
+ *        solver accordingly.
  *
  *  Updates (when, what and who)
  *     - [11 March 2022] added option for perturbation 
@@ -25,12 +18,16 @@
  * 
  *     - [22 March 2022] time step-size (dtime) can be
  *       modified by the solver that throws an action
- *       XActions::SET_STEP_SIZE. An example would
+ *       XImpActParams::SET_STEP_SIZE. An example would
  *       be the AdaptiveSteppingModule. (RB)
  * 
  *     - [05 July 2022] added getIntForce_ to compute
  *       internal force, required by quasi-Newton/line
  *       search algorithms. (RB)
+ * 
+ *     - [27 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  *       
  */
 
@@ -62,12 +59,12 @@ const char*  SaturatedPorousModel::DISP_NAMES[3]     = { "dx", "dy", "dz" };
 const char*  SaturatedPorousModel::SHAPE_PROP        = "shape";
 const char*  SaturatedPorousModel::MATERIAL_PROP     = "material";
 
-const char*  SaturatedPorousModel::INTRIN_PERM_PROP  = "intrin_perm";
-const char*  SaturatedPorousModel::FLUID_VISC_PROP   = "fluid_visc";
-const char*  SaturatedPorousModel::SOLID_STIFF_PROP  = "solid_stiff";
-const char*  SaturatedPorousModel::FLUID_STIFF_PROP  = "fluid_stiff";
+const char*  SaturatedPorousModel::INTRIN_PERM_PROP  = "intrinPerm";
+const char*  SaturatedPorousModel::FLUID_VISC_PROP   = "fluidVisc";
+const char*  SaturatedPorousModel::SOLID_STIFF_PROP  = "solidStiff";
+const char*  SaturatedPorousModel::FLUID_STIFF_PROP  = "fluidStiff";
 const char*  SaturatedPorousModel::POROSITY_PROP     = "porosity";
-const char*  SaturatedPorousModel::BIOT_COEFF_PROP   = "biot_coeff";
+const char*  SaturatedPorousModel::BIOT_COEFF_PROP   = "biotCoeff";
 const char*  SaturatedPorousModel::DTIME_PROP        = "dtime";
 
 //-----------------------------------------------------------------------
@@ -337,9 +334,9 @@ bool SaturatedPorousModel::takeAction
 
     // Get the internal force vector.
 
-    params.get ( force,    ActionParams::INT_VECTOR );
+    params.get ( force, ActionParams::INT_VECTOR );
 
-    getIntForce_ ( force, state, state0 );
+    getMatrix_ ( nullptr, force, state, state0 );
 
     return true;
   }
@@ -365,7 +362,7 @@ bool SaturatedPorousModel::takeAction
     params.get ( mbuilder, ActionParams::MATRIX0    );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( *mbuilder, force, state, state0 );
+    getMatrix_ ( mbuilder, force, state, state0 );
 
     return true;
   }
@@ -436,232 +433,18 @@ bool SaturatedPorousModel::takeAction
 
 
 //-----------------------------------------------------------------------
-//   getIntForce_
-//-----------------------------------------------------------------------
-
-
-void SaturatedPorousModel::getIntForce_
-
-  ( const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0 )
-
-{
-  // System::out() << "Enters getIntForce_ \n";
-
-  IdxVector   ielems     = egroup_.getIndices ();
-
-  const int   ielemCount = ielems.size         ();
-  const int   nodeCount  = shape_->nodeCount   ();
-  const int   ipCount    = shape_->ipointCount ();
-  const int   strCount   = STRAIN_COUNTS[rank_];
-
-  // number of displacement and pressure dofs
-
-  const int   dispCount  = nodeCount * rank_;  
-  const int   presCount   = nodeCount;
-
-  Cubix       grads      ( rank_, nodeCount, ipCount );
-  Matrix      coords     ( rank_, nodeCount );
-
-  // current element vector state:
-  // displacement and pressure
-  
-  Vector      pres       ( presCount );
-  Vector      disp       ( dispCount );
-
-  // old step element vector state:
-  // displacement and pressure
-  
-  Vector      pres0      ( presCount );
-  Vector      disp0      ( dispCount );
-
-  // current
-
-  Matrix      stiff      ( strCount, strCount );
-  Vector      stress     ( strCount );
-  Vector      strain     ( strCount );
-
-  // old-step
-
-  Vector      strain0    ( strCount );
-
-  // internal force vector:
-  // displacement and pressure
-
-  Vector      elemForce1 ( dispCount );
-  Vector      elemForce2 ( presCount  );
-
-  // element stiffness matrices (four components)
-
-  // Matrix      elemMat1   ( dispCount, dispCount ); // disp-disp
-  Matrix      elemMat2   ( dispCount, presCount ); // disp-pres
-  Matrix      elemMat3   ( presCount, dispCount ); // pres-disp
-  Matrix      elemMat4   ( presCount, presCount ); // pres-pres
-  
-  // B matrices
-  // displacement and pressure
-  
-  Matrix      bd         ( strCount, dispCount );
-  Matrix      bdt        = bd.transpose ();
-
-  Matrix      be         ( rank_, presCount );
-  Matrix      bet        = be.transpose ();
-  
-  IdxVector   inodes     ( nodeCount );
-  IdxVector   presDofs   ( presCount );
-  IdxVector   dispDofs   ( dispCount );
-
-  Vector      ipWeights  ( ipCount   );
-
-  MChain1     mc1;
-  MChain2     mc2;
-  MChain3     mc3;
-  MChain4     mc4; 
-  
-  double      wip;
-
-  // Iterate over all elements assigned to this model.
-
-  for ( int ie = 0; ie < ielemCount; ie++ )
-  {
-
-    if ( ! isActive_[ie] )
-    {      
-      continue;
-    }
-
-    // Get the global element index.
-
-    int  ielem = ielems[ie];
-
-    // Get the element coordinates and DOFs.
-
-    elems_.getElemNodes  ( inodes,   ielem  );
-    nodes_.getSomeCoords ( coords,   inodes );
-    dofs_->getDofIndices ( presDofs, inodes, presTypes_ );
-    dofs_->getDofIndices ( dispDofs, inodes, dispTypes_ );
-
-    // Compute the spatial derivatives of the element shape
-    // functions in the integration points.
-
-    shape_->getShapeGradients ( grads, ipWeights, coords );
-
-    // Compute the shape functions and transpose
-
-    Matrix N  = shape_->getShapeFunctions ();
-    
-    // Get current nodal displacements and pressures
-
-    pres = select ( state, presDofs );
-    disp = select ( state, dispDofs );
-
-    // Get old step nodal displacements and pressures
-
-    pres0 = select ( state0, presDofs );
-    disp0 = select ( state0, dispDofs );
-
-    // Initialize the internal forces
-    // and the tangent stiffness matrix
-    
-    elemForce1 = 0.0;
-    elemForce2 = 0.0;
-
-    // elemMat1   = 0.0;
-    elemMat2   = 0.0;
-    elemMat3   = 0.0;
-    elemMat4   = 0.0;    
-
-    // Loop on integration points 
-    
-    for ( int ip = 0; ip < ipCount; ip++ )
-    {
-
-      // get the corresponding material point ipoint
-      // of element ielem integration point ip from the mapping
-
-      int ipoint = ipMpMap_ ( ielem, ip );
-
-      // Compute the B-matrix for this integration point.
-      // it is the B-matrix of displacement dofs
-
-      getShapeGrads_ ( bd, grads(ALL,ALL,ip) );
-
-      // get B-matrix associated with pres dofs
-      
-      be =  grads(ALL,ALL,ip);
-
-      // Compute the strain, strain0 for this integration point.
-
-      matmul ( strain,  bd, disp  );
-      matmul ( strain0, bd, disp0 );
-
-      // Store the regular strain components.
-
-      strain_(ALL,ipoint) = strain;
-
-      // Compute the integration point pressures
-
-      Vector Nip          = N( ALL,ip );
-
-      double p            = dot ( Nip, pres  );
-      double p0           = dot ( Nip, pres0 );
-
-      // Update the material model.
-
-      material_->update ( stress, stiff, strain_(ALL,ipoint), ipoint );
-
-      // compute stiffness matrix components
-
-      wip         = ipWeights[ip];
-      // elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
-      elemMat2   -= wip * alpha_ * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
-      elemMat4   -= wip * ( Sto_ * matmul ( Nip, Nip ) + dtime_ * Keff_ * mc2.matmul ( bet, be ) );
-
-      /** (Non-symmetric) 
-       * elemMat4   += wip * ( Sto_ * matmul ( Nip, Nip ) 
-       *  + dtime_  * Keff_ * mc2.matmul ( bet, be ) ); */
-     
-      // compute internal forces
-
-      elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
-      elemForce1 -=  wip * alpha_ * p * ( mc1.matmul ( bdt, voigtDiv_ ) );
-      elemForce2 +=  wip * ( Sto_ * p0 * Nip );
-
-      /** (Non-symmetric) 
-       * elemForce2 -=  wip * ( Sto_ * p0 * Nip ); */
-
-    }  // end of loop on integration points
-
-    /** (Non-symmetric) 
-       * elemMat3      =  -elemMat2.transpose() ; */
-
-    elemMat3      =  elemMat2.transpose() ;
-    elemForce2   +=  mc1.matmul ( elemMat3, disp ) - mc1.matmul ( elemMat3, disp0 );
-    elemForce2   +=  mc1.matmul ( elemMat4, pres );
-
-    // Assembly ...
-
-    select ( force, dispDofs )  += elemForce1;
-    select ( force, presDofs  ) += elemForce2;
-  }
-}
-
-
-//-----------------------------------------------------------------------
 //   getMatrix_
 //-----------------------------------------------------------------------
 
 
 void SaturatedPorousModel::getMatrix_
 
-  ( MatrixBuilder&  mbuilder,
-    const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0 )
+  ( Ref<MatrixBuilder>      mbuilder,
+    const Vector&           force,
+    const Vector&           state,
+    const Vector&           state0 )
 
 {
-  // System::out() << "Enters getMatrix_ \n";
 
   IdxVector   ielems     = egroup_.getIndices ();
 
@@ -781,10 +564,14 @@ void SaturatedPorousModel::getMatrix_
     elemForce1 = 0.0;
     elemForce2 = 0.0;
 
-    elemMat1   = 0.0;
-    elemMat2   = 0.0;
+    if ( mbuilder != nullptr )
+    {
+      elemMat1   = 0.0;
+      elemMat2   = 0.0;
+      elemMat4   = 0.0;
+    }
+
     elemMat3   = 0.0;
-    elemMat4   = 0.0;    
 
     // Loop on integration points 
     
@@ -828,13 +615,16 @@ void SaturatedPorousModel::getMatrix_
       // compute stiffness matrix components
 
       wip         = ipWeights[ip];
-      elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
-      elemMat2   -= wip * alpha_ * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
-      elemMat4   -= wip * ( Sto_ * matmul ( Nip, Nip ) + dtime_ * Keff_ * mc2.matmul ( bet, be ) );
 
-      /** (Non-symmetric) 
-       * elemMat4   += wip * ( Sto_ * matmul ( Nip, Nip ) 
-       *  + dtime_  * Keff_ * mc2.matmul ( bet, be ) ); */
+      if ( mbuilder != nullptr )
+      {
+        elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
+        elemMat2   -= wip * alpha_ * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
+        elemMat4   -= wip * ( Sto_ * matmul ( Nip, Nip ) 
+                              + dtime_ * Keff_ * mc2.matmul ( bet, be ) );
+      }
+
+      elemMat3     -= wip * alpha_ * mc2.matmul ( matmul (Nip, voigtDiv_ ), bd );
      
       // compute internal forces
 
@@ -842,24 +632,20 @@ void SaturatedPorousModel::getMatrix_
       elemForce1 -=  wip * alpha_ * p * ( mc1.matmul ( bdt, voigtDiv_ ) );
       elemForce2 +=  wip * ( Sto_ * p0 * Nip  );
 
-      /** (Non-symmetric) 
-       * elemForce2 -=  wip * ( Sto_ * p0 * Nip ); */
-
     }  // end of loop on integration points
 
-    /** (Non-symmetric) 
-       * elemMat3      =  -elemMat2.transpose() ; */
-
-    elemMat3      =  elemMat2.transpose() ;
     elemForce2   +=  mc1.matmul ( elemMat3, disp ) - mc1.matmul ( elemMat3, disp0 );
     elemForce2   +=  mc1.matmul ( elemMat4, pres );
 
     // Assembly ...
 
-    mbuilder.addBlock ( dispDofs, dispDofs, elemMat1 );
-    mbuilder.addBlock ( dispDofs, presDofs, elemMat2 );
-    mbuilder.addBlock ( presDofs, dispDofs, elemMat3 );
-    mbuilder.addBlock ( presDofs, presDofs, elemMat4 );
+    if ( mbuilder != nullptr )
+    {
+      mbuilder -> addBlock ( dispDofs, dispDofs, elemMat1 );
+      mbuilder -> addBlock ( dispDofs, presDofs, elemMat2 );
+      mbuilder -> addBlock ( presDofs, dispDofs, elemMat3 );
+      mbuilder -> addBlock ( presDofs, presDofs, elemMat4 );
+    }
 
     select ( force, dispDofs )  += elemForce1;
     select ( force, presDofs  ) += elemForce2;

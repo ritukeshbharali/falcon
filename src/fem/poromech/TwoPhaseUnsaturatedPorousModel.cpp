@@ -1,12 +1,6 @@
 
 /** @file TwoPhaseUnsaturatedPorousModel.cpp
- *  @brief Implements unsaturated two-phase porous media model.
- *  
- *  This class implements a mass conserving unsaturated two-phase
- *  porous media model with two phases - solid and fluid. The 
- *  fluid pressure equation is stabilized via perturbation 
- *  (see DOI: 10.1002/nme2295). The gas is assumed to be at 
- *  atmospheric pressure, equal to zero.
+ *  @brief Two-phase unsaturated porous media model.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
@@ -14,15 +8,15 @@
  *  NOTE: Stiffness matrix is unsymmetric.
  *
  *  Updates (when, what and who)
- *     - [30 April 2022] Added Corey-Brooks saturation
- *       model (RB)
  *     - [19 May 2022] Corrected the expression for the
  *       storage term, Sto (RB) [BUG FIX!]
  *     - [19 October 2022] Updated to a mass conserving
  *       scheme (RB)
  *     - [12 December 2022] Retention models update
  *       similar to material models (RB)
- *       
+ *     - [27 December 2023] getMatrix_ returns the internal
+ *       force if mbuilder = nullptr. Eliminates duplicate
+ *       code. (RB)  
  */
 
 /* Include jem and jive headers */
@@ -54,16 +48,16 @@ const char*  TwoPhaseUnsaturatedPorousModel::SHAPE_PROP           = "shape";
 const char*  TwoPhaseUnsaturatedPorousModel::MATERIAL_PROP        = "material";
 const char*  TwoPhaseUnsaturatedPorousModel::RETENTION_PROP       = "retention";
 
-const char*  TwoPhaseUnsaturatedPorousModel::INTRIN_PERM_PROP     = "intrin_perm";
-const char*  TwoPhaseUnsaturatedPorousModel::FLUID_VISC_PROP      = "fluid_visc";
-const char*  TwoPhaseUnsaturatedPorousModel::SOLID_STIFF_PROP     = "solid_stiff";
-const char*  TwoPhaseUnsaturatedPorousModel::FLUID_STIFF_PROP     = "fluid_stiff";
+const char*  TwoPhaseUnsaturatedPorousModel::INTRIN_PERM_PROP     = "intrinPerm";
+const char*  TwoPhaseUnsaturatedPorousModel::FLUID_VISC_PROP      = "fluidVisc";
+const char*  TwoPhaseUnsaturatedPorousModel::SOLID_STIFF_PROP     = "solidStiff";
+const char*  TwoPhaseUnsaturatedPorousModel::FLUID_STIFF_PROP     = "fluidStiff";
 const char*  TwoPhaseUnsaturatedPorousModel::POROSITY_PROP        = "porosity";
-const char*  TwoPhaseUnsaturatedPorousModel::BIOT_COEFF_PROP      = "biot_coeff";
+const char*  TwoPhaseUnsaturatedPorousModel::BIOT_COEFF_PROP      = "biotCoeff";
 const char*  TwoPhaseUnsaturatedPorousModel::DTIME_PROP           = "dtime";
 
-const char*  TwoPhaseUnsaturatedPorousModel::SOLID_DENSITY_PROP   = "rho_solid";
-const char*  TwoPhaseUnsaturatedPorousModel::FLUID_DENSITY_PROP   = "rho_fluid";
+const char*  TwoPhaseUnsaturatedPorousModel::SOLID_DENSITY_PROP   = "rhoSolid";
+const char*  TwoPhaseUnsaturatedPorousModel::FLUID_DENSITY_PROP   = "rhoFluid";
 const char*  TwoPhaseUnsaturatedPorousModel::GRAVITY_PROP         = "gravity";
 
 
@@ -354,7 +348,27 @@ bool TwoPhaseUnsaturatedPorousModel::takeAction
   using jive::model::ActionParams;
   using jive::model::StateVector;
 
-  // compute the tangent stiffness matrix and internal force vector
+  // compute the internal force vector
+
+  if ( action == Actions::GET_INT_VECTOR )
+  {
+    Vector  state;
+    Vector  state0;
+    Vector  force;
+
+    // Get the current and old step displacements.
+
+    StateVector::get    ( state,  dofs_, globdat );
+    StateVector::getOld ( state0, dofs_, globdat );
+
+    // Get the matrix builder and the internal force vector.
+
+    params.get ( force, ActionParams::INT_VECTOR );
+
+    getMatrix_ ( nullptr, force, state, state0 );
+
+    return true;
+  }
 
   if ( action == Actions::GET_MATRIX0 )
   {
@@ -375,7 +389,7 @@ bool TwoPhaseUnsaturatedPorousModel::takeAction
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( *mbuilder, force, state, state0 );
+    getMatrix_ ( mbuilder, force, state, state0 );
 
     return true;
   }
@@ -459,10 +473,10 @@ bool TwoPhaseUnsaturatedPorousModel::takeAction
 
 void TwoPhaseUnsaturatedPorousModel::getMatrix_
 
-  ( MatrixBuilder&  mbuilder,
-    const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0 )
+  ( Ref<MatrixBuilder>  mbuilder,
+    const Vector&       force,
+    const Vector&       state,
+    const Vector&       state0 )
 
 {
 
@@ -592,10 +606,14 @@ void TwoPhaseUnsaturatedPorousModel::getMatrix_
     elemForce1 = 0.0;
     elemForce2 = 0.0;
 
-    elemMat1   = 0.0;
-    elemMat2   = 0.0;
+    if ( mbuilder != nullptr )
+    {
+      elemMat1   = 0.0;
+      elemMat2   = 0.0;
+      elemMat4   = 0.0;
+    }
+
     elemMat3   = 0.0;
-    elemMat4   = 0.0;    
 
     // Loop on integration points 
     
@@ -649,20 +667,30 @@ void TwoPhaseUnsaturatedPorousModel::getMatrix_
       double dSto1dp = ( Sf / Ks_ * ( alpha_ - phi_ ) * 2.0 * dSfdp ) + ( phi_ * dSfdp / Kf_ );
       double dSto2dp = ( ( alpha_ - phi_ ) / Ks_ * Sf ) + ( ( alpha_ - phi_ ) / Ks_ * dSfdp * p);
 
-      // compute stiffness matrix components
+      // compute weight of the ip
 
       wip         = ipWeights[ip];
-      elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
-      elemMat2   -= wip * alpha_ * Sf * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
-      elemMat2   -= wip * alpha_ * dSfdp * p * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
+
+      // compute stiffness matrix components
+
+      if ( mbuilder != nullptr )
+      {
+        elemMat1   += wip * mc3.matmul ( bdt, stiff, bd );
+        elemMat2   -= wip * alpha_ * Sf * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
+        elemMat2   -= wip * alpha_ * dSfdp * p * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
+        elemMat4   += wip * ( ( Sto1 + Sto2 * dSfdp + dSto1dp * ( p-p0 ) 
+                               + dSto2dp * ( Sf-Sf0 ) ) * matmul ( Nip, Nip ) 
+                               + dtime_ * krw * Keff_ * mc2.matmul ( bet, be ) );
+      }
+
       elemMat3   += wip * alpha_ * Sf * mc2.matmul ( matmul ( Nip, voigtDiv_ ), bd );
-      elemMat4   += wip * ( ( Sto1 + Sto2 * dSfdp + dSto1dp * ( p-p0 ) + dSto2dp * ( Sf-Sf0 ) ) * matmul ( Nip, Nip ) + dtime_ * krw * Keff_ * mc2.matmul ( bet, be ) );
            
       // compute internal forces
 
       elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
       elemForce1 -=  wip * alpha_ * Sf * p * ( mc1.matmul ( bdt, voigtDiv_ ) );
-      elemForce2 +=  wip * ( (Sto1 * (p-p0) + Sto2 * (Sf - Sf0) ) * Nip + dtime_ * krw * Keff_ * mc1.matmul( mc2.matmul ( bet, be ), pres ) );
+      elemForce2 +=  wip * ( (Sto1 * (p-p0) + Sto2 * (Sf - Sf0) ) * Nip 
+                     + dtime_ * krw * Keff_ * mc1.matmul( mc2.matmul ( bet, be ), pres ) );
       elemForce2 -=  wip * dtime_ * krw * Keff_ * rhoF_ * mc1.matmul( bet, gVec_ );
 
       // compute gravity body load ( -y or -z direction for 2D/3D)
@@ -675,13 +703,16 @@ void TwoPhaseUnsaturatedPorousModel::getMatrix_
 
     // Assembly ...
 
-    mbuilder.addBlock ( dispDofs, dispDofs, elemMat1 );
-    mbuilder.addBlock ( dispDofs, presDofs, elemMat2 );
-    mbuilder.addBlock ( presDofs, dispDofs, elemMat3 );
-    mbuilder.addBlock ( presDofs, presDofs, elemMat4 );
+    if ( mbuilder != nullptr )
+    {
+      mbuilder -> addBlock ( dispDofs, dispDofs, elemMat1 );
+      mbuilder -> addBlock ( dispDofs, presDofs, elemMat2 );
+      mbuilder -> addBlock ( presDofs, dispDofs, elemMat3 );
+      mbuilder -> addBlock ( presDofs, presDofs, elemMat4 );
+    }
 
-    select ( force, dispDofs )  += elemForce1;
-    select ( force, presDofs  ) += elemForce2;
+    select ( force, dispDofs ) += elemForce1;
+    select ( force, presDofs ) += elemForce2;
   }
 }
 

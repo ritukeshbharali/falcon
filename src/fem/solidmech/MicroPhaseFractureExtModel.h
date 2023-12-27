@@ -1,12 +1,7 @@
 
 /** @file MicroPhaseFractureExtModel.h
- *  @brief Implements the micromorphic phase-field fracture
- *         model with extrapolation.
- *  
- *  This class implements the unified phase-field fracture
- *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
- *  irreversibility is enforced using the history variable
- *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
+ *  @brief Micromorphic phase-field fracture model with
+ *         extrapolation.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
@@ -15,6 +10,10 @@
  *     - [06 August 2022] replaced hard-coded Amor phase
  *       field model with generic material update to
  *       different phase-field material models. (RB)
+ * 
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  */
 
 /* Include c++ headers */
@@ -97,7 +96,8 @@ typedef ElementGroup           ElemGroup;
 /** @brief 
  *  The MicroPhaseFractureExtModel class implements a micromorphic phase
  *  -field fracture FE Model with extrapolation based convexification 
- *  technique.
+ *  technique. 
+ *  <a href="https://link.springer.com/article/10.1007/s00466-023-02380-1" target="_blank">Link to Article</a>
  */
 
 class MicroPhaseFractureExtModel : public Model
@@ -158,16 +158,9 @@ class MicroPhaseFractureExtModel : public Model
 
  private:
 
-  void                      getIntForce_
-
-    ( const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0,
-      const Vector&           state00 );
-
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
       const Vector&           state,
       const Vector&           state0,

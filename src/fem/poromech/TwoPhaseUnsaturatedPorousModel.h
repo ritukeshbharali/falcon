@@ -1,12 +1,6 @@
 
 /** @file TwoPhaseUnsaturatedPorousModel.h
- *  @brief Implements unsaturated two-phase porous media model.
- *  
- *  This class implements a mass conserving unsaturated two-phase
- *  porous media model with two phases - solid and fluid. The 
- *  fluid pressure equation is stabilized via perturbation 
- *  (see DOI: 10.1002/nme2295). The gas is assumed to be at 
- *  atmospheric pressure, equal to zero.
+ *  @brief Two-phase unsaturated porous media model.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
@@ -19,7 +13,10 @@
  *     - [19 October 2022] Updated to a mass conserving
  *       scheme (RB)
  *     - [12 December 2022] Retention models update
- *       similar to material models (RB)  
+ *       similar to material models (RB)
+ *     - [27 December 2023] getMatrix_ returns the internal
+ *       force if mbuilder = nullptr. Eliminates duplicate
+ *       code. (RB)  
  */
 
 /* Include jem and jive headers */
@@ -108,6 +105,17 @@ typedef ElementGroup           ElemGroup;
 //   class TwoPhaseUnsaturatedPorousModel
 //=======================================================================
 
+/** @brief 
+ *  The TwoPhaseUnsaturatedPorousModel class implements a two-phase 
+ *  unsaturated (partially saturated) porous media.
+ * 
+ *  This class implements a mass conserving two-phase unsaturated
+ *  porous media model with two phases - solid and fluid. The 
+ *  fluid pressure equation is stabilized via perturbation 
+ *  (see DOI: 10.1002/nme2295). The gas is assumed to be at 
+ *  atmospheric pressure, equal to zero.
+ * 
+ */
 
 class TwoPhaseUnsaturatedPorousModel : public Model
 {
@@ -166,7 +174,7 @@ class TwoPhaseUnsaturatedPorousModel : public Model
 
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
       const Vector&           state,
       const Vector&           state0 );

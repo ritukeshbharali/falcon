@@ -1,10 +1,6 @@
+
 /** @file SaturatedPorousModel.h
- *  @brief Implements saturated porous media model.
- *  
- *  This class implements the fully saturated porous media 
- *  model with two phases - solid and fluid. The effect of
- *  gravity is absent. The fluid pressure equation is 
- *  stabilized via perturbation (see DOI: 10.1002/nme2295).
+ *  @brief Saturated porous media model.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 04 March 2022
@@ -28,6 +24,10 @@
  *     - [05 July 2022] added getIntForce_ to compute
  *       internal force, required by quasi-Newton/line
  *       search algorithms. (RB)
+ * 
+ *     - [27 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  *       
  */
 
@@ -105,6 +105,12 @@ typedef ElementGroup           ElemGroup;
 /** @brief 
  *  The SaturatedPorousModel class implements a Finite Element Model for
  *  saturated porous media.
+ * 
+ *  This class implements the fully saturated porous media 
+ *  model with two phases - solid and fluid. The effect of
+ *  gravity is absent. The fluid pressure equation is 
+ *  stabilized via perturbation (see DOI: 10.1002/nme2295).
+ * 
  */
 
 class SaturatedPorousModel : public Model
@@ -157,15 +163,9 @@ class SaturatedPorousModel : public Model
 
  private:
 
-  void                      getIntForce_
-
-    ( const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0 );
-
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
       const Vector&           state,
       const Vector&           state0 );

@@ -1,16 +1,6 @@
 
 /** @file SaturatedPorousFractureModel.cpp
- *  @brief Implements saturated porous media model with fracture.
- *  
- *  This class implements a mass conserving saturated two-phase
- *  porous media model together with phase-field fracture. Model
- *  options include randomly distributed porosity, different
- *  permeability models, arc-length solver mode ( assembles unit
- *  load, arc-length constraint ), BFGS mode ( skip phase-field 
- *  coupled terms in the stiffness matrix, keepOffDiags = false ).
- *  The model also updates the time in globdat, so that Paraview
- *  Module can print time stamps to a pvd file.
- *   
+ *  @brief Saturated porous media model with phase-field fracture. 
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
@@ -25,6 +15,9 @@
  *     - [24 May 2023] Added randomly distributed porosity,
  *       arc-length mode, phase-field specific BFGS mode 
  *       features (RB)  
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  */
 
 /* Include c++ headers */
@@ -607,9 +600,9 @@ bool SaturatedPorousFractureModel::takeAction
 
     // Get the internal force vector.
 
-    params.get ( force,    ActionParams::INT_VECTOR );
+    params.get ( force, ActionParams::INT_VECTOR );
 
-    getIntForce_ ( force, state, state0 );
+    getMatrix_ ( nullptr, force, state, state0 );
 
     globdat.set ( XProps::FE_DISSIPATION, diss_ );
 
@@ -637,7 +630,7 @@ bool SaturatedPorousFractureModel::takeAction
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( *mbuilder, force, state, state0 );
+    getMatrix_ ( mbuilder, force, state, state0 );
 
     globdat.set ( XProps::FE_DISSIPATION, diss_ );
 
@@ -748,407 +741,16 @@ bool SaturatedPorousFractureModel::takeAction
 
 
 //-----------------------------------------------------------------------
-//   getIntForce_
-//-----------------------------------------------------------------------
-
-
-void SaturatedPorousFractureModel::getIntForce_
-
-  ( const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0 )
-
-{
-  IdxVector   ielems     = egroup_.getIndices ();
-
-  const int   ielemCount = ielems.size         ();
-  const int   nodeCount  = shape_->nodeCount   ();
-  const int   ipCount    = shape_->ipointCount ();
-  const int   strCount   = STRAIN_COUNTS[rank_];
-
-  // number of displacement dofs
-
-  const int   dispCount  = nodeCount * rank_;  
-
-  Cubix       grads      ( rank_, nodeCount, ipCount );
-  Matrix      coords     ( rank_, nodeCount );
-
-  // current element vector state:
-  // displacement, pressure, phase-field
-  
-  Vector      disp       ( dispCount );
-  Vector      pres       ( nodeCount );
-  Vector      phi        ( nodeCount );
-
-  // old step element vector state:
-  // displacement, pressure, phase-field
-  
-  Vector      disp0      ( dispCount );
-  Vector      pres0      ( nodeCount );
-  Vector      phi0       ( nodeCount );
-
-  // current
-
-  Matrix      stiff      ( strCount, strCount );
-  Vector      stress     ( strCount );
-  Vector      stressP    ( strCount );
-  Vector      strain     ( strCount );
-  Vector      strain0    ( strCount );
-  
-
-  // internal force vector:
-  // displacement and pressure
-
-  Vector      elemForce1 ( dispCount );
-  Vector      elemForce2 ( nodeCount  );
-  Vector      elemForce3 ( nodeCount );
-
-  // element stiffness matrices (nine components)
-
-  Matrix      elemMat11  ( dispCount, dispCount ); // disp-disp
-  Matrix      elemMat12  ( dispCount, nodeCount ); // disp-pres
-  Matrix      elemMat13  ( dispCount, nodeCount ); // disp-phi
-
-  Matrix      elemMat21  ( nodeCount, dispCount ); // pres-disp
-  Matrix      elemMat22  ( nodeCount, nodeCount ); // pres-pres
-  Matrix      elemMat23  ( nodeCount, nodeCount ); // pres-phi
-
-  Matrix      elemMat31  ( nodeCount, dispCount );  // phi-disp
-  Matrix      elemMat32  ( nodeCount, nodeCount );  // phi-pres
-  Matrix      elemMat33  ( nodeCount, nodeCount );  // phi-phi
-  
-  // B matrices
-  // displacement and pressure
-  
-  Matrix      bd         ( strCount, dispCount );
-  Matrix      bdt        = bd.transpose ();
-
-  Matrix      be         ( rank_, nodeCount );
-  Matrix      bet        = be.transpose ();
-  
-  IdxVector   inodes     ( nodeCount );
-  IdxVector   dispDofs   ( dispCount );
-  IdxVector   presDofs   ( nodeCount );
-  IdxVector   phiDofs    ( nodeCount );
-
-  Vector      ipWeights  ( ipCount   );
-
-  MChain1     mc1;
-  MChain2     mc2;
-  MChain3     mc3;
-  MChain4     mc4; 
-  
-  double      wip;
-
-  // Initialize degradation function and its derivatives
-
-  double      gphi;
-  double      gphi0;
-  double      dgphi;
-
-  // Initialize dissipation
-
-  diss_ = 0.0;
-
-  // Iterate over all elements assigned to this model.
-
-  for ( int ie = 0; ie < ielemCount; ie++ )
-  {
-
-    if ( ! isActive_[ie] )
-    {      
-      continue;
-    }
-
-    // Get the global element index.
-
-    int  ielem = ielems[ie];
-
-    // Get the element coordinates and DOFs.
-
-    elems_.getElemNodes  ( inodes,   ielem  );
-    nodes_.getSomeCoords ( coords,   inodes );
-    dofs_->getDofIndices ( dispDofs, inodes, dispTypes_ );
-    dofs_->getDofIndices ( presDofs, inodes, presTypes_ );
-    dofs_->getDofIndices ( phiDofs,  inodes, phiTypes_  );
-
-    // Compute the spatial derivatives of the element shape
-    // functions in the integration points.
-
-    shape_->getShapeGradients ( grads, ipWeights, coords );
-
-    // Compute the shape functions and transpose
-
-    Matrix N  = shape_->getShapeFunctions ();
-
-    // Compute the area of the element
-
-    const double area = sum( ipWeights );
-    
-    // Get current nodal displacements and pressures
-
-    disp = select ( state, dispDofs );
-    pres = select ( state, presDofs );
-    phi  = select ( state, phiDofs  );
-
-    // Get old step nodal displacements and pressures
-
-    disp0 = select ( state0, dispDofs );
-    pres0 = select ( state0, presDofs );
-    phi0  = select ( state0,  phiDofs );
-
-    // Initialize the internal forces
-    // and the tangent stiffness matrix
-    
-    elemForce1 = 0.0;
-    elemForce2 = 0.0;
-    elemForce3 = 0.0;  
-
-    // Loop on integration points 
-    
-    for ( int ip = 0; ip < ipCount; ip++ )
-    {
-
-      // get the corresponding material point ipoint
-      // of element ielem integration point ip from the mapping
-
-      int ipoint = ipMpMap_ ( ielem, ip );
-
-      // Compute the B-matrix for this integration point.
-      // it is the B-matrix of displacement dofs
-
-      getShapeGrads_ ( bd, grads(ALL,ALL,ip) );
-
-      // get B-matrix associated with pres dofs
-      
-      be =  grads(ALL,ALL,ip);
-
-      // Compute the strain for this integration point.
-
-      matmul ( strain,  bd, disp  );
-      matmul ( strain0, bd, disp0 );
-
-      const double evol  = dot ( voigtDiv_, strain  );
-      const double evol0 = dot ( voigtDiv_, strain0 );
-
-      // Store the regular strain components.
-
-      strain_(slice(BEGIN,strCount),ipoint) = strain;
-
-      // Compute the integration point pressures
-
-      const Vector Nip  = N( ALL,ip );
-      const double p    = dot ( Nip, pres  );
-      const double p0   = dot ( Nip, pres0 );
-
-      // Compute the integration point phase-fields (current, old, old old)
-
-      double pf  = dot ( Nip, phi  );
-      double pf0 = dot ( Nip, phi0 );
-
-      // Compute the degradation function with the extrapolated phase-field
-
-      {
-        double gphi0_n    = ::pow( 1.0 - pf0, p_);
-        double gphi0_d    = gphi0_n + a1_*pf0 + a1_*a2_*pf0*pf0 + 
-                             a1_*a2_*a3_*pf0*pf0*pf0;
-        gphi0             = gphi0_n/gphi0_d + 1.e-6;
-      }
-
-      // Compute the degradation function derivatives with the current phase-field
-
-      {
-        double gphi_n    = ::pow( 1.0- pf, p_);
-        double gphi_d    = gphi_n + a1_*pf + a1_*a2_*pf*pf + a1_*a2_*a3_*pf*pf*pf;
-
-        double dgphi_n   = - p_ * ( ::pow( 1.0- pf, p_- 1.0) );
-        double dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*pf + 3.0*a1_*a2_*a3_*pf*pf;
-
-        gphi             = gphi_n/gphi_d + 1.e-6;
-        dgphi            = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
-      }
-
-      strain_(strCount, ipoint) = gphi;
-
-      // Compute the locally dissipated fracture energy function derivatives
-
-      double dw  = eta_ + 2.0 * ( 1- eta_ ) * pf;
-
-      // Compute stress and material tangent stiffness
-
-      if ( convexify_ )
-      {
-        phaseMaterial_->update ( stress, stiff, strain, gphi0, ipoint );
-      }
-      else
-      {
-        phaseMaterial_->update ( stress, stiff, strain, gphi, ipoint );
-      }
-
-      // Get the fracture driving energy and its derivative
-
-      double Psi = phaseMaterial_->givePsi();
-      stressP    = phaseMaterial_->giveDerivPsi();
-
-      // Compute the storage coefficient and its derivative
-
-      const double Sto = ( ( alpha_ - n0_ ) / Ks_ ) + ( n0_ / Kf_ );
-
-      // Compute dissipation
-
-      diss_ += ipWeights[ip] * ( gphi0 - gphi ) * Psi;   // CHANGED
-
-      // Get old history value and update fracture driving energy
-
-      const double H0      = preHist_.H0_[ipoint];
-
-      Psi                  = max(Psi,H0);
-      Psi                  = max(Psi,Psi0_);
-      newHist_.H0_[ipoint] = Psi;
-
-      // Compute bulk and fracture permeability
-
-      Matrix kappaComb ( rank_, rank_ );  kappaComb = 0.0;
-      Matrix kappaBulk ( rank_, rank_ );  kappaBulk = 0.0;
-      Matrix kappaFrac ( rank_, rank_ );  kappaFrac = 0.0;
-      Matrix I2        ( rank_, rank_ );  I2        = 0.0;
-
-      I2         = tensorUtils::getI2 ( rank_ );
-
-      // Permeability models
-
-      if ( permType_ == FIXED_ISO_PERM )
-      {
-        kappaComb  = Keff_ * I2;
-      }
-      else if ( permType_ == VOL_STRAIN_PERM )
-      {
-        double effStrain = 0.3333 * ( strain[0] + strain[1] + strain[2] ) ;
-
-        if ( effStrain > 0.0 )
-        {
-          kappaComb = ( Keff_ + 1.e+8 * effStrain * Keff_ ) * I2;
-        }
-        else
-        {
-          kappaComb  = Keff_ * I2;
-        }
-      }
-      else if ( permType_ == TENSILE_STRAIN_PERM )
-      {
-        Matrix strainT = tensorUtils::voigt2tensorStrain( strain );
-
-        Matrix  eigVecs;    eigVecs .resize ( 3, 3 );
-        Vector  eigVals;    eigVals .resize ( 3 );
-
-        using jem::numeric::EigenUtils;
-
-        EigenUtils::symSolve ( eigVals, eigVecs, strainT );
-
-        for ( int is = 0; is < 3 ; is++ )
-        {
-          if ( eigVals[is] < 0.0 )
-          {
-            eigVals[is] = 0.0;
-          }
-        }
-
-        double effStrain = jem::min ( eigVals );
-
-        if ( effStrain > 0.0 )
-        {
-          kappaComb = ( Keff_ + 1.e+7 * effStrain * Keff_ ) * I2;
-        }
-        else
-        {
-          kappaComb  = Keff_ * I2;
-        }
-
-      }
-      else // cubic (aniso and iso versions)
-      {
-        kappaBulk = Keff_ * I2;
-
-        // Compute residual crack opening 
-
-        double wr = ::sqrt( 120. * kappa_ ); // sqrt ( 12 * 10 * kappa_ )
-
-        // Compute normalized phase-field gradient
-
-        Vector   pfGrad  ( rank_ ); pfGrad = 0.0;
-        matmul ( pfGrad, be, phi );
-
-        double  pfGradNorm = jem::numeric::norm2(pfGrad);
-        pfGrad /= pfGradNorm;
-
-        // Get strain in a tensorial format
-
-        Matrix strainT = tensorUtils::voigt2tensorRankStrain ( strain );
-
-        // Compute the fracture opening
-
-        double wc = ::sqrt(area) * ( 1.0 + dot( pfGrad, matmul( strainT, pfGrad ) ) );
-
-        // Compute final fracture opening ( max of wc and wr )
-
-        double wh = max( wr, wc );
-
-        // Compute fracture permeability
-
-        kappaFrac = ( wh * wh / ( 12. * mu_ ) ) * I2 ;
-
-        // Add anisotropy
-
-        if ( permType_ == CUBIC_PERM )
-        {
-          kappaFrac -= ( wh * wh / ( 12. * mu_ ) ) * matmul ( pfGrad, pfGrad ) ;
-        }
-
-        // Compute dual permeability
-
-        if ( pf > 0.8 )
-        {
-          kappaComb = kappaBulk + 25. * ::pow( pf - 0.8, 2.0 ) * kappaFrac;
-        }
-        else
-        {
-          kappaComb = kappaBulk;
-        }
-
-      }
-
-      // compute internal forces
-
-      wip         = ipWeights[ip];
-
-      elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
-      elemForce1 -=  wip * alpha_ * p * ( mc1.matmul ( bdt, voigtDiv_ ) );
-      elemForce2 +=  wip *  (  Nip * (  Sto * (p-p0) + alpha_ * ( evol - evol0 )  ) / dtime_ 
-                             + mc1.matmul ( mc3.matmul( bet, kappaComb, be ), pres ) );
-      elemForce3 +=  wip * ( Nip * ( gc_/(cw_*l0_) * dw + dgphi * Psi) + (2.0 * gc_*l0_/cw_) * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );
-
-    }  // end of loop on integration points
-
-    // Assembly ...
-
-    select ( force, dispDofs ) += elemForce1;
-    select ( force, presDofs ) += elemForce2;
-    select ( force, phiDofs  ) += elemForce3;
-  }
-}
-
-
-//-----------------------------------------------------------------------
 //   getMatrix_
 //-----------------------------------------------------------------------
 
 
 void SaturatedPorousFractureModel::getMatrix_
 
-  ( MatrixBuilder&  mbuilder,
-    const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0 )
+  ( Ref<MatrixBuilder>  mbuilder,
+    const Vector&       force,
+    const Vector&       state,
+    const Vector&       state0 )
 
 {
   IdxVector   ielems     = egroup_.getIndices ();
@@ -1297,17 +899,20 @@ void SaturatedPorousFractureModel::getMatrix_
     elemForce2 = 0.0;
     elemForce3 = 0.0;
 
-    elemMat11  = 0.0;
-    elemMat12  = 0.0;
-    elemMat13  = 0.0;
+    if ( mbuilder != nullptr )
+    {
+      elemMat11  = 0.0;
+      elemMat12  = 0.0;
+      elemMat13  = 0.0;
 
-    elemMat21  = 0.0;
-    elemMat22  = 0.0;
-    elemMat23  = 0.0;
+      elemMat21  = 0.0;
+      elemMat22  = 0.0;
+      elemMat23  = 0.0;
 
-    elemMat31  = 0.0;
-    elemMat32  = 0.0;
-    elemMat33  = 0.0;    
+      elemMat31  = 0.0;
+      elemMat32  = 0.0;
+      elemMat33  = 0.0;
+    }
 
     // Loop on integration points 
     
@@ -1533,24 +1138,31 @@ void SaturatedPorousFractureModel::getMatrix_
         }
       }
 
-      // compute stiffness matrix components   
+      // Compute weight of the ip
 
       wip         = ipWeights[ip];
 
-      elemMat11  += wip * mc3.matmul ( bdt, stiff, bd );
-      elemMat12  -= wip * alpha_ * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
+      // Compute stiffness matrix components
 
-      if ( !convexify_ )
+      if ( mbuilder != nullptr )
       {
-        elemMat13  += wip * dgphi * ( matmul ( matmul(bdt, stressP), Nip ) );
+        elemMat11  += wip * mc3.matmul ( bdt, stiff, bd );
+        elemMat12  -= wip * alpha_ * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
+
+        if ( !convexify_ )
+        {
+          elemMat13  += wip * dgphi * ( matmul ( matmul(bdt, stressP), Nip ) );
+        }
+
+        elemMat21  += wip * alpha_ / dtime_ * mc2.matmul ( matmul (Nip, voigtDiv_), bd );
+        elemMat22  += wip * (  Sto / dtime_ * matmul ( Nip, Nip )
+                             + mc3.matmul ( bet, kappaComb, be ) );
+
+        elemMat31  += wip * loading * dgphi * ( matmul ( Nip, matmul(stressP, bd) ) );
+        elemMat33  += wip * ( ( gc_/(cw_*l0_) * ddw + ddgphi * Psi) 
+                          * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) 
+                          * mc2. matmul ( bet, be ) );
       }
-
-      elemMat21  += wip * alpha_ / dtime_ * mc2.matmul ( matmul (Nip, voigtDiv_), bd );
-      elemMat22  += wip * (  Sto / dtime_ * matmul ( Nip, Nip )
-                           + mc3.matmul ( bet, kappaComb, be ) );
-
-      elemMat31  += wip * loading * dgphi * ( matmul ( Nip, matmul(stressP, bd) ) );
-      elemMat33  += wip * ( ( gc_/(cw_*l0_) * ddw + ddgphi * Psi) * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) * mc2. matmul ( bet, be ) );
 
       // compute internal forces
 
@@ -1564,21 +1176,24 @@ void SaturatedPorousFractureModel::getMatrix_
 
     // Assembly ...
 
-    mbuilder.addBlock ( dispDofs, dispDofs, elemMat11 );
-    mbuilder.addBlock ( dispDofs, presDofs, elemMat12 );
-    mbuilder.addBlock ( presDofs, dispDofs, elemMat21 );
-    mbuilder.addBlock ( presDofs, presDofs, elemMat22 );
-    mbuilder.addBlock ( phiDofs,  phiDofs,  elemMat33 );
-
-    // Assemble the off-diagonal components involving the phase-field
-    // For staggered solvers, keepOffDiags_ = false;
-
-    if ( keepOffDiags_ )
+    if ( mbuilder != nullptr )
     {
-      mbuilder.addBlock ( dispDofs, phiDofs,  elemMat13 );
-      mbuilder.addBlock ( phiDofs,  dispDofs, elemMat31 );
-      mbuilder.addBlock ( presDofs, phiDofs,  elemMat23 );
-      mbuilder.addBlock ( phiDofs,  presDofs, elemMat32 );  
+      mbuilder -> addBlock ( dispDofs, dispDofs, elemMat11 );
+      mbuilder -> addBlock ( dispDofs, presDofs, elemMat12 );
+      mbuilder -> addBlock ( presDofs, dispDofs, elemMat21 );
+      mbuilder -> addBlock ( presDofs, presDofs, elemMat22 );
+      mbuilder -> addBlock ( phiDofs,  phiDofs,  elemMat33 );
+
+      // Assemble the off-diagonal components involving the phase-field
+      // For staggered solvers, keepOffDiags_ = false;
+
+      if ( keepOffDiags_ )
+      {
+        mbuilder -> addBlock ( dispDofs, phiDofs,  elemMat13 );
+        mbuilder -> addBlock ( phiDofs,  dispDofs, elemMat31 );
+        mbuilder -> addBlock ( presDofs, phiDofs,  elemMat23 );
+        mbuilder -> addBlock ( phiDofs,  presDofs, elemMat32 );  
+      }
     }
 
     select ( force, dispDofs ) += elemForce1;

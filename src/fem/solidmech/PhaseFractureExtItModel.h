@@ -1,9 +1,7 @@
 
-/** @file PhaseFractureExtItModel.cpp
- *  @brief Implements the linear elasticity model.
- *  
- *  This class implements a finite element model with
- *  linear elastic material law.
+/** @file PhaseFractureExtItModel.h
+ *  @brief Phase-field fracture model with 
+ *         extrapolation and correction.
  * 
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 02 March 2022
@@ -13,6 +11,10 @@
  *       point averaged element data. getElemStress_
  *       and getElemStrain_ are the new functions.
  *       (RB)
+ * 
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  * 
  */
 
@@ -92,8 +94,9 @@ typedef ElementGroup           ElemGroup;
 //=======================================================================
 
 /** @brief 
- *  The PhaseFractureExtItModel class implements a phase-field fracture
- *  FE Model using extrapolation technique.
+ *  The PhaseFractureExtItModel class implements the unified phase-field 
+ *  fracture FE Model using extrapolation technique and corrective
+ *  iteration.
  */
 
 class PhaseFractureExtItModel : public Model
@@ -102,7 +105,7 @@ class PhaseFractureExtItModel : public Model
  public:
 
   typedef PhaseFractureExtItModel  Self;
-  typedef Model                  Super;
+  typedef Model                    Super;
 
   static const char*        DISP_NAMES[3];
   static const char*        SHAPE_PROP;
@@ -154,20 +157,12 @@ class PhaseFractureExtItModel : public Model
 
  private:
 
-  void                      getIntForce_
-
-    ( const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0,
-      const Vector&           state00 );
-
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
       const Vector&           state,
-      const Vector&           state0,
-      const Vector&           state00 );
+      const Vector&           state0 );
 
   void                      getMatrix2_
 
@@ -279,9 +274,11 @@ class PhaseFractureExtItModel : public Model
   double dt_ ;
   double dt0_;
 
-  Vector stateI0_;
-  Vector stateI00_;
+  // Extrapolated state vector
+
   Vector stateExt_;
+
+  // Extrapolation-related variables
 
   double errExt_;
   bool   extFail_;

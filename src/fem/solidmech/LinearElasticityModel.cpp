@@ -1,9 +1,6 @@
 
 /** @file LinearElasticityModel.cpp
- *  @brief Implements the linear elasticity model.
- *  
- *  This class implements a finite element model with
- *  linear elastic material law.
+ *  @brief Linear elasticity model.
  * 
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 02 March 2022

@@ -1,18 +1,6 @@
 
 /** @file SaturatedPorousMicroFractureModel.cpp
- *  @brief Implements saturated porous media model with fracture.
- *  
- *  This class implements a mass conserving saturated two-phase
- *  porous media model together with phase-field fracture. Model
- *  options include randomly distributed porosity, different
- *  permeability models, arc-length solver mode ( assembles unit
- *  load, arc-length constraint ), BFGS mode ( skip phase-field 
- *  coupled terms in the stiffness matrix, keepOffDiags = false ).
- *  The model also updates the time in globdat, so that Paraview
- *  Module can print time stamps to a pvd file.
- * 
- *  Please consider citing the corresponding article
- *  (doi:10.1007/s00466-023-02380-1), if the code benefits you.
+ *  @brief Saturated porous media model with micromorphic phase-field fracture.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
@@ -26,7 +14,10 @@
  *       scheme (RB)
  *     - [24 May 2023] Added randomly distributed porosity,
  *       arc-length mode, phase-field specific BFGS mode 
- *       features (RB)  
+ *       features (RB)
+ *     - [27 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  */
 
 /* Include c++ headers */
@@ -70,7 +61,6 @@ const char*  SaturatedPorousMicroFractureModel::MATERIAL_PROP          = "materi
 const char*  SaturatedPorousMicroFractureModel::GENERATE_NEW_SEED      = "generateNewSeed";
 const char*  SaturatedPorousMicroFractureModel::KEEP_OFF_DIAGS_PROP    = "keepOffDiags";
 const char*  SaturatedPorousMicroFractureModel::ARCLEN_MODE_PROP       = "arcLenMode";
-const char*  SaturatedPorousMicroFractureModel::CONVEXIFY_PROP         = "convexify";
 
 const char*  SaturatedPorousMicroFractureModel::INTRIN_PERM_PROP       = "intrinPerm";
 const char*  SaturatedPorousMicroFractureModel::FLUID_VISC_PROP        = "fluidVisc";
@@ -100,8 +90,6 @@ const char*  SaturatedPorousMicroFractureModel::GRIFFITH_ENERGY_PROP   = "griffi
 const char*  SaturatedPorousMicroFractureModel::LENGTH_SCALE_PROP      = "lengthScale";
 const char*  SaturatedPorousMicroFractureModel::TENSILE_STRENGTH_PROP  = "tensileStrength";
 const char*  SaturatedPorousMicroFractureModel::PENALTY_PROP           = "penalty";
-const char*  SaturatedPorousMicroFractureModel::MAX_OITER_PROP         = "maxOIter";
-const char*  SaturatedPorousMicroFractureModel::OITER_TOL_PROP         = "oIterTol";
 
 const char*  SaturatedPorousMicroFractureModel::BRITTLE_AT1             = "at1";
 const char*  SaturatedPorousMicroFractureModel::BRITTLE_AT2             = "at2";
@@ -466,26 +454,11 @@ SaturatedPorousMicroFractureModel::SaturatedPorousMicroFractureModel
   myProps.find ( beta_, PENALTY_PROP );
   myConf. set  ( PENALTY_PROP, beta_ );
 
-  convexify_ = false;
-  myProps.find ( convexify_, CONVEXIFY_PROP );
-  myConf. set  ( CONVEXIFY_PROP, convexify_ );
-
-  maxOIter_ = 1000;
-  myProps.find ( maxOIter_, MAX_OITER_PROP );
-  myConf. set  ( MAX_OITER_PROP, maxOIter_ );
-
-  oIterTol_ = 2.5e-3;
-  myProps.find ( oIterTol_, OITER_TOL_PROP );
-  myConf. set  ( OITER_TOL_PROP, oIterTol_ );
-  
   preHist_.phasef_.resize ( ipCount );
   newHist_.phasef_.resize ( ipCount );
 
   preHist_.phasef_  = 0.0;
   newHist_.phasef_  = 0.0;
-
-  extFail_          = false;
-  oIter_            = 0;
  
 }
 
@@ -622,15 +595,15 @@ bool SaturatedPorousMicroFractureModel::takeAction
 
     // Get the current and old step displacements.
 
-    StateVector::get       ( state, dofs_, globdat  );
-    StateVector::getOld    ( state0, dofs_, globdat );
+    StateVector::get       ( state,   dofs_, globdat );
+    StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
 
     // Get the internal force vector.
 
-    params.get ( force,    ActionParams::INT_VECTOR );
+    params.get ( force, ActionParams::INT_VECTOR );
 
-    getIntForce_ ( force, state, state0, state00 );
+    getMatrix_ ( nullptr, force, state, state0 );
 
     globdat.set ( XProps::FE_DISSIPATION, diss_ );
 
@@ -659,17 +632,7 @@ bool SaturatedPorousMicroFractureModel::takeAction
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    Properties  info      = SolverInfo::get ( globdat );
-    idx_t       iterCount = 0; 
-    info.find   (  iterCount , SolverInfo::ITER_COUNT );
-
-    if ( iterCount == 0 && extFail_ == false )
-    {
-      stateExt_.resize( state.size() );
-      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
-    }
-
-    getMatrix_ ( *mbuilder, force, state, state0 );
+    getMatrix_ ( mbuilder, force, state, state0 );
 
     globdat.set ( XProps::FE_DISSIPATION, diss_ );
 
@@ -782,32 +745,16 @@ bool SaturatedPorousMicroFractureModel::takeAction
 
 
 //-----------------------------------------------------------------------
-//   getIntForce_
-//-----------------------------------------------------------------------
-
-
-void SaturatedPorousMicroFractureModel::getIntForce_
-
-  ( const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0,
-    const Vector&   state00 )
-
-{
-}
-
-
-//-----------------------------------------------------------------------
 //   getMatrix_
 //-----------------------------------------------------------------------
 
 
 void SaturatedPorousMicroFractureModel::getMatrix_
 
-  ( MatrixBuilder&  mbuilder,
-    const Vector&   force,
-    const Vector&   state,
-    const Vector&   state0 )
+  ( Ref<MatrixBuilder>  mbuilder,
+    const Vector&       force,
+    const Vector&       state,
+    const Vector&       state0 )
 
 {
   IdxVector   ielems     = egroup_.getIndices ();
@@ -832,12 +779,10 @@ void SaturatedPorousMicroFractureModel::getMatrix_
   Vector      phi        ( nodeCount );
 
   // old step element vector state:
-  // displacement, pressure, phase-field
+  // displacement, pressure
   
   Vector      disp0      ( dispCount );
   Vector      pres0      ( nodeCount );
-  Vector      phi0       ( nodeCount );
-  Vector      phiEx      ( nodeCount );
 
   // current
 
@@ -951,10 +896,8 @@ void SaturatedPorousMicroFractureModel::getMatrix_
 
     // Get old step nodal displacements and pressures
 
-    disp0 = select ( state0, dispDofs );
-    pres0 = select ( state0, presDofs );
-    phi0  = select ( state0,  phiDofs );
-    phiEx = select ( stateExt_, phiDofs );
+    disp0 = select ( state0,    dispDofs );
+    pres0 = select ( state0,    presDofs );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
@@ -963,17 +906,20 @@ void SaturatedPorousMicroFractureModel::getMatrix_
     elemForce2 = 0.0;
     elemForce3 = 0.0;
 
-    elemMat11  = 0.0;
-    elemMat12  = 0.0;
-    elemMat13  = 0.0;
+    if ( mbuilder != nullptr )
+    {
+      elemMat11  = 0.0;
+      elemMat12  = 0.0;
+      elemMat13  = 0.0;
 
-    elemMat21  = 0.0;
-    elemMat22  = 0.0;
-    elemMat23  = 0.0;
+      elemMat21  = 0.0;
+      elemMat22  = 0.0;
+      elemMat23  = 0.0;
 
-    elemMat31  = 0.0;
-    elemMat32  = 0.0;
-    elemMat33  = 0.0;    
+      elemMat31  = 0.0;
+      elemMat32  = 0.0;
+      elemMat33  = 0.0;
+    }
 
     // Loop on integration points 
     
@@ -1019,26 +965,11 @@ void SaturatedPorousMicroFractureModel::getMatrix_
       const double p    = dot ( Nip, pres  );
       const double p0   = dot ( Nip, pres0 );
 
-      // Compute the integration point phase-fields (current, old, old old)
+      // Compute the integration point phase-fields (current)
 
       double pf  = dot ( Nip, phi  );
-      double pf0 = dot ( Nip, phi0 );
-      double pfEx = dot ( Nip, phiEx );
 
-      errExt_ += ::pow( pf - pfEx, 2.0 );
-
-      // Ensure extrapolated micromorphic phase-field is within bounds [0,1]
-
-      if ( pfEx < 0.0 )
-      {
-        pfEx = 0.0;
-      }
-      else if ( pfEx > 1.0 )
-      {
-        pfEx = 1.0;
-      }
-
-      // Compute local phase-field (d) iteratively via extrapolation
+      // Compute local phase-field (d) iteratively
 
       const double d0    = preHist_.phasef_[ipoint];
       double d           = d0;
@@ -1060,10 +991,10 @@ void SaturatedPorousMicroFractureModel::getMatrix_
       double dw          = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
       double ddw         = 2.0 * ( 1.0 - eta_ );
 
-      double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
+      double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
       double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
 
-      int iter = 0;
+      // int iter = 0;
 
       // Carry out the iterative procedure
 
@@ -1071,95 +1002,7 @@ void SaturatedPorousMicroFractureModel::getMatrix_
       {
 
         // Increase iteration counter 
-        iter   += 1;        
-        
-        // Update local phase-field
-        d      -= Res/J;
-
-        // Compute required quantities
-
-        gphi_n    = ::pow( 1.0 - d, p_);
-        gphi_d    = gphi_n + a1_*d + a1_*a2_*d*d + 
-                             a1_*a2_*a3_*d*d*d;
-
-        dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0) );
-        dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
-
-        ddgphi_n  = p_ * (p_ - 1.0) * ( ::pow( 1.0- d, p_- 2.0) );
-        ddgphi_d  = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
-
-        // double gphi      = gphi_n/gphi_d;
-        dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
-        ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
-                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
-
-        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
-        ddw       = 2.0 * ( 1.0 - eta_ );
-
-        // Compute new residual and Jacobian
-        
-        Res       = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
-        J         = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
-
-      }
-
-      // Ensure extrapolated phase-field (d) is within bounds [0,1]
-
-      if ( d < 0.0 )
-      {
-        d = 0.0;
-      }
-      else if ( d > 1.0 )
-      {
-        d = 1.0;
-      }
-
-      // This d is only needed for gphiEx
-
-      d       = max(d,d0);
-
-      gphi_n  = ::pow( 1.0 - d, p_);
-      gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
-                         a1_*a2_*a3_*d*d*d;
-      gphi    = gphi_n/gphi_d + 1.e-10;
-
-      strain_(strCount,ipoint) = gphi;   
-
-      newHist_.phasef_[ipoint] = d; 
-
-      // Compute non-extrapolated phase-field (required for second equation!)
-
-      // d           = d0;
-      gphi_n      = ::pow( 1.0 - d, p_);
-      gphi_d      = gphi_n + a1_*d + a1_*a2_*d*d + 
-                             a1_*a2_*a3_*d*d*d;
-
-      dgphi_n     = - p_ * ( ::pow( 1.0 - d, p_- 1) );
-      dgphi_d     = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
-
-      ddgphi_n    = p_ * (p_ - 1.0 ) * ( ::pow( 1.0- d, p_- 2.0) );
-      ddgphi_d    = ddgphi_n +  2.0*a1_*a2_ + 6.0*a1_*a2_*a3_*d;
-
-      dgphi       = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
-      ddgphi      = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
-                           ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / 
-                           ( gphi_d * gphi_d * gphi_d );  
-
-      dw          = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
-      ddw         = 2.0 * ( 1.0 - eta_ );
-
-      Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
-      J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
-   
-      iter = 0;
-
-      // Carry out the iterative procedure
-
-      while ( abs(Res) > 1.e-4 )
-      {
-
-        // Increase iteration counter 
-        iter   += 1;        
+        // iter   += 1;        
         
         // Update local phase-field
         d      -= Res/J;
@@ -1202,8 +1045,8 @@ void SaturatedPorousMicroFractureModel::getMatrix_
         // Compute the required quantities
 
         gphi_n  = ::pow( 1.0 - d, p_);
-        gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
-                             a1_*a2_*a3_*d*d*d;
+        // gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+        //                      a1_*a2_*a3_*d*d*d;
 
         dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0 ) );
         dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
@@ -1216,7 +1059,7 @@ void SaturatedPorousMicroFractureModel::getMatrix_
         ddgphi    = ( ( ddgphi_n * gphi_d - gphi_n * ddgphi_d ) * gphi_d - 2.0 * 
                            ( dgphi_n * gphi_d - gphi_n * dgphi_d ) * dgphi_d ) / ( gphi_d * gphi_d * gphi_d );  
 
-        dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
+        // dw        = eta_ + 2.0 * ( 1.0 - eta_ ) * d;
         ddw       = 2.0 * ( 1.0 - eta_ );
 
         // Compute the degradation function derivatives with the current phase-field
@@ -1228,25 +1071,37 @@ void SaturatedPorousMicroFractureModel::getMatrix_
       {
         d = 0.0;
         dphidStrain = 0.0;
+        dphidd = 0.0;
       }
       else if ( d > 1.0 )
       {
         d = 1.0;
+        dphidd = 0.0;
       }
       else 
       {
         d           = d0;
         dphidStrain = 0.0;
+        dphidd = 0.0;
       }
 
-      // Compute the degradation function with the old micromorphic phase-field
+      gphi_n  = ::pow( 1.0 - d, p_);
+      gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+                         a1_*a2_*a3_*d*d*d;
+      
+      gphi_n  = ::pow( 1.0 - d, p_);
+        gphi_d  = gphi_n + a1_*d + a1_*a2_*d*d + 
+                             a1_*a2_*a3_*d*d*d;
 
-      {
-        double gphi0_n    = ::pow( 1.0 - d0, p_);
-        double gphi0_d    = gphi0_n + a1_*d0 + a1_*a2_*d0*d0 + 
-                             a1_*a2_*a3_*d0*d0*d0;
-        gphi0             = gphi0_n/gphi0_d + 1.e-6;
-      }
+      dgphi_n   = - p_ * ( ::pow( 1.0 - d, p_- 1.0 ) );
+      dgphi_d   = dgphi_n + a1_ + 2.0*a1_*a2_*d + 3.0*a1_*a2_*a3_*d*d;
+
+      gphi    = gphi_n/gphi_d;
+      dgphi     = ( dgphi_n*gphi_d - gphi_n*dgphi_d ) / ( gphi_d * gphi_d );
+
+      strain_(strCount,ipoint) = gphi;   
+
+      newHist_.phasef_[ipoint] = d;
 
       // Compute material tangent and stress
 
@@ -1367,39 +1222,51 @@ void SaturatedPorousMicroFractureModel::getMatrix_
         {
           kappaComb = kappaBulk;
         }
-
       }
 
-      // compute stiffness matrix components   
+      // Compute weight of the ip
 
       wip         = ipWeights[ip];
 
-      elemMat11  += wip * mc3.matmul ( bdt, stiff, bd );
-      elemMat12  -= wip * alpha_ * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
-      elemMat21  += wip * alpha_ / dtime_ * mc2.matmul ( matmul (Nip, voigtDiv_), bd );
-      elemMat22  += wip * (  Sto / dtime_ * matmul ( Nip, Nip )
-                           + mc3.matmul ( bet, kappaComb, be ) );
+      // Compute stiffness matrix components   
 
-      elemMat31  -= wip * alpha * ( matmul ( Nip, matmul(dphidStrain, bd) ) );
-      elemMat33  += wip * ( alpha * ( 1.0 - dphidd ) * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) * mc2. matmul ( bet, be ) );
+      if ( mbuilder != nullptr )
+      {
+        elemMat11  += wip * mc3.matmul ( bdt, stiff, bd );
+        elemMat11  += wip * dgphi * mc3.matmul ( bdt, matmul(stressP,dphidStrain), bd );
+        elemMat12  -= wip * alpha_ * mc2.matmul ( bdt, matmul (voigtDiv_, Nip ) );
+        elemMat21  += wip * alpha_ / dtime_ * mc2.matmul ( matmul (Nip, voigtDiv_), bd );
+        elemMat22  += wip * (  Sto / dtime_ * matmul ( Nip, Nip )
+                             + mc3.matmul ( bet, kappaComb, be ) );
 
-      // compute internal forces
+        elemMat31  -= wip * alpha * ( matmul ( Nip, matmul(dphidStrain, bd) ) );
+        elemMat33  += wip * ( alpha * ( 1.0 - dphidd ) 
+                          * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) 
+                          * mc2. matmul ( bet, be ) );
+      }
+
+      // Compute internal forces
 
       elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
       elemForce1 -=  wip * alpha_ * p * ( mc1.matmul ( bdt, voigtDiv_ ) );
-      elemForce2 +=  wip *  (  Nip * (  Sto * (p-p0) + alpha_ * ( evol - evol0 )  ) / dtime_ 
+      elemForce2 +=  wip * (   Nip * (  Sto * (p-p0) + alpha_ * ( evol - evol0 )  ) / dtime_ 
                              + mc1.matmul ( mc3.matmul( bet, kappaComb, be ), pres ) );
-      elemForce3 +=  wip * ( alpha * ( pf - d ) *  Nip + (2.0 * gc_*l0_/cw_) * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );  
+      elemForce3 +=  wip * ( alpha * ( pf - d ) *  Nip + (2.0 * gc_*l0_/cw_) 
+                         * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );  
 
     }  // end of loop on integration points
 
     // Assembly ...
 
-    mbuilder.addBlock ( dispDofs, dispDofs, elemMat11 );
-    mbuilder.addBlock ( dispDofs, presDofs, elemMat12 );
-    mbuilder.addBlock ( presDofs, dispDofs, elemMat21 );
-    mbuilder.addBlock ( presDofs, presDofs, elemMat22 );
-    mbuilder.addBlock ( phiDofs,  phiDofs,  elemMat33 );
+    if ( mbuilder != nullptr )
+    {
+      mbuilder -> addBlock ( dispDofs, dispDofs, elemMat11 );
+      mbuilder -> addBlock ( dispDofs, presDofs, elemMat12 );
+      mbuilder -> addBlock ( presDofs, dispDofs, elemMat21 );
+      mbuilder -> addBlock ( presDofs, presDofs, elemMat22 );
+      mbuilder -> addBlock ( phiDofs,  dispDofs, elemMat31 );
+      mbuilder -> addBlock ( phiDofs,  phiDofs,  elemMat33 );
+    }
 
     select ( force, dispDofs ) += elemForce1;
     select ( force, presDofs ) += elemForce2;
@@ -1508,9 +1375,6 @@ void SaturatedPorousMicroFractureModel::getArcFunc_
   using jive::implict::ArclenActions;
   using jive::implict::ArclenParams;
 
-  //idx_t       iiter = 0; 
-  //globdat.get (  iiter , "iiter" );
-
   // Get the state vectors (current and old)
 
   Vector  state;
@@ -1518,24 +1382,6 @@ void SaturatedPorousMicroFractureModel::getArcFunc_
 
   StateVector::get       ( state,   dofs_, globdat );
   StateVector::getOld    ( state0,  dofs_, globdat );
-
-  /*if ( iiter == 0 )
-  {
-    StateVector::getOldOld ( state0,  dofs_, globdat );
-  }
-  else
-  {
-    StateVector::getOld    ( state0,  dofs_, globdat );
-  }*/
-
-  // Get the state vectors (current and old)
-
-  /*Vector  state;
-  Vector  state0;
-
-  StateVector::get       ( state,   dofs_, globdat );
-  StateVector::getOld    ( state0,  dofs_, globdat );
-  StateVector::getOldOld ( state00, dofs_, globdat );*/
 
   // Get the arc-length parameters and set them to zero
 
@@ -1726,13 +1572,6 @@ void SaturatedPorousMicroFractureModel::getArcFunc_
 
       wip         = ipWeights[ip];
 
-      /*if ( gphi0 > gphi && Psi > 0.0 && dtime_ > 0.0 )
-      {
-        fvalue      +=  wip * ( gphi0 - gphi ) * Psi;
-        elemjac10_0 +=  wip * ( gphi0 - gphi ) * ( mc1.matmul ( bdt, stressP ) );
-        elemjac10_2 -=  wip * Nip * dgphi * Psi;
-      }*/
-
       fvalue      +=  wip * ( gphi0 - gphi ) * Psi;
       elemjac10_0 +=  wip * ( gphi0 - gphi ) * ( mc1.matmul ( bdt, stressP ) );
       elemjac10_2 -=  wip * Nip * dgphi * Psi;
@@ -1747,16 +1586,6 @@ void SaturatedPorousMicroFractureModel::getArcFunc_
   }
 
   System::out() << " getArcFunc_ gives dissipation = " << fvalue << "\n";
-
-  // (This works for all cases! 1.e+3 is tuning factor, which might be problem
-  //  dependent!)
-
-  // fvalue += exp( -2.0 * dtime_ + 2.5 ) / 1.e+3;
-  // jac11   = - exp ( -2.0 * dtime_ + 2.5 ) / 5.e+2;
-
-  // const double a = 0.5;
-  // fvalue += dtime_ * exp( - a * dtime_ );
-  // jac11   = ( 1.0 - a * dtime_ ) * exp( -a * dtime_ );
 
   globdat.set ( XProps::FE_DISSIPATION,    fvalue );
   params .set ( ArclenParams::JACOBIAN10,  jac10  );
@@ -2684,46 +2513,7 @@ void SaturatedPorousMicroFractureModel::checkCommit_
   ( const Properties&  params,
     const Properties&  globdat )
 
-{
-  using jive::model::StateVector;
-
-  Vector  state;
-
-  // Get the current state
-
-  StateVector::get ( state,   dofs_, globdat );
-
-  if ( ::sqrt(errExt_) > oIterTol_ && oIter_ < maxOIter_ )
-  {
-    oIter_++;
-
-    params.set ( XActions::DISCARD, false );
-    params.set ( XActions::ACCEPT , false );
-
-    System::out() << "Extrapolated phase-field not converged.\n  Error = " 
-                  << (::sqrt(errExt_)) << "\n  Outer Iter: "
-                  << oIter_ << "\n";
-
-    //stateExt_ *= 0.05;
-    //stateExt_ += 0.95 * state;
-    
-    stateExt_ = state;
-    extFail_  = true;
-  }
-  else
-  {
-    extFail_ = false;
-    oIter_   = 0;
-
-    System::out() << "Extrapolated phase-field converged.\n Error = " 
-                  << (::sqrt(errExt_)) << "\n  Outer Iter: "
-                  << oIter_ << "\n";
-    
-    System::out() << " Dissipated Energy = " << diss_ << "\n";
-  }
-
-  errExt_ = 0.0;
- 
+{ 
 }
 
 //-----------------------------------------------------------------------

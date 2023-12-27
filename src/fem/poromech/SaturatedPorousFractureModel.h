@@ -1,16 +1,6 @@
 
 /** @file SaturatedPorousFractureModel.h
- *  @brief Implements saturated porous media model with fracture.
- *  
- *  This class implements a mass conserving saturated two-phase
- *  porous media model together with phase-field fracture. Model
- *  options include randomly distributed porosity, different
- *  permeability models, arc-length solver mode ( assembles unit
- *  load, arc-length constraint ), BFGS mode ( skip phase-field 
- *  coupled terms in the stiffness matrix, keepOffDiags = false ).
- *  The model also updates the time in globdat, so that Paraview
- *  Module can print time stamps to a pvd file.
- *   
+ *  @brief Saturated porous media model with phase-field fracture. 
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
@@ -25,6 +15,9 @@
  *     - [24 May 2023] Added randomly distributed porosity,
  *       arc-length mode, phase-field specific BFGS mode 
  *       features (RB)  
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  */
 
 /* Include c++ headers */
@@ -34,15 +27,13 @@
 /* Include jem and jive headers */
 
 #include <jem/base/Array.h>
-#include <jem/base/Error.h>
 #include <jem/base/System.h>
-#include <jem/base/IllegalInputException.h>
 #include <jem/io/PrintWriter.h>
 #include <jem/numeric/algebra/matmul.h>
 #include <jem/numeric/algebra/MatmulChain.h>
 #include <jem/numeric/sparse/utilities.h>
-#include <jem/util/Properties.h>
 #include <jem/util/Flex.h>
+#include <jem/util/Properties.h>
 #include <jive/util/utilities.h>
 #include <jive/util/XTable.h>
 #include <jive/util/XDofSpace.h>
@@ -52,18 +43,9 @@
 #include <jive/algebra/MatrixBuilder.h>
 #include <jive/model/Model.h>
 #include <jive/model/ModelFactory.h>
-#include <jive/model/Actions.h>
 #include <jive/model/StateVector.h>
-#include <jive/geom/Geometries.h>
 #include <jive/geom/InternalShape.h>
 #include <jive/geom/IShapeFactory.h>
-#include <jive/geom/StdSquare.h>
-#include <jive/geom/StdCube.h>
-#include <jive/geom/IShapeFactory.h>
-#include <jive/geom/StdShapeFactory.h>
-#include <jive/geom/StdBezierShape.h>
-#include <jive/geom/ParametricArea.h>
-#include <jive/geom/ParametricVolume.h>
 #include <jive/fem/ElementGroup.h>
 #include <jive/util/Globdat.h>
 
@@ -117,6 +99,20 @@ typedef ElementGroup           ElemGroup;
 //=======================================================================
 //   class SaturatedPorousFractureModel
 //=======================================================================
+
+/** @brief 
+ *  The SaturatedPorousFractureModel class implements a saturated porous
+ *  media FE model with unified phase-field fracture.
+ * 
+ *  Model options include randomly distributed porosity, different
+ *  permeability models, arc-length solver mode ( assembles unit
+ *  load, arc-length constraint ), BFGS mode ( skip phase-field 
+ *  coupled terms in the stiffness matrix, keepOffDiags = false ).
+ *  The model also updates the time in globdat, so that Paraview
+ *  Module can print time stamps to a pvd file.
+ * 
+ */
+
 
 
 class SaturatedPorousFractureModel : public Model
@@ -204,15 +200,9 @@ class SaturatedPorousFractureModel : public Model
 
  private:
 
-  void                      getIntForce_
-
-    ( const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0 );
-
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
       const Vector&           state,
       const Vector&           state0 );

@@ -1,9 +1,6 @@
 
-/** @file LinearElasticityModel.cpp
- *  @brief Implements the linear elasticity model.
- *  
- *  This class implements a finite element model with
- *  linear elastic material law.
+/** @file LinearElasticityModel.h
+ *  @brief Linear elasticity model.
  * 
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 02 March 2022
@@ -86,8 +83,8 @@ typedef ElementGroup           ElemGroup;
 //=======================================================================
 
 /** @brief 
- *  The LinearElasticityModel class implements a Finite Element Model to
- *  be used with linear elastic materials.
+ *  The LinearElasticityModel class implements a linear elasticity FE 
+ *  model to be used with linear elastic materials (Hooke, Orthotropic).
  */
 
 class LinearElasticityModel : public Model
@@ -133,59 +130,138 @@ class LinearElasticityModel : public Model
 
  private:
 
+  /**
+   * @brief getMatrix_ function assembles the stiffness matrix 
+   *        and the internal force vector.
+   *
+   * @param[out] mbuilder  Ref to Matrix Builder (Stiffness Matrix)
+   * @param[in]  force     Internal force vector
+   * @param[in]  state     Current state (solution) vector
+   */
+
   void                      getMatrix_
 
     ( MatrixBuilder&          mbuilder,
       const Vector&           force,
       const Vector&           state );
 
+  /**
+   * @brief getMatrix2_ function assembles the mass matrix.
+   *
+   * @param[out] mbuilder  Ref to Matrix Builder (Mass Matrix)
+   */
+
   void                      getMatrix2_
 
     ( MatrixBuilder&          mbuilder );
+
+  /**
+   * @brief getTable_ function returns post-processing quantities
+   *        in a tabular format.
+   *
+   * @param[in,out] params    Properties object containing the table
+   * @param[in]  globdat      Global database
+   */  
 
   bool                      getTable_
 
     ( const Properties&       params,
       const Properties&       globdat );
 
+  /**
+   * @brief getOutputData_ function returns post-processing quantities
+   *        in a tabular format (originally written by Frans van der Meer).
+   *
+   * @param[out] table     Table containing post-processing quantities
+   * @param[out] weights   Weights
+   * @param[out] contents  Specific contents requested by the user.
+   * @param[in]  state     Current state (solution) vector
+   */  
+
   void                      getOutputData_
 
     ( Ref<XTable>             table,
       const Vector&           weights,
       const String&           contents,
-      const Vector&           state );         
+      const Vector&           state );
+
+  /**
+   * @brief getStress_ function returns nodal stresses in a table along 
+   *        with the weights.
+   *
+   * @param[out] table     Table containing post-processing quantities
+   * @param[out] weights   Weights
+   */
 
   void                      getStress_
 
     ( XTable&                 table,
       const Vector&           weights );
 
+  /**
+   * @brief getElemStress_ function returns element (average of 
+   *        integration points) stresses in a table along with the weights.
+   *
+   * @param[out] table     Table containing post-processing quantities
+   * @param[out] weights   Weights
+   */
+
   void                      getElemStress_
 
     ( XTable&                 table,
-      const Vector&           weights );  
+      const Vector&           weights );
+
+  /**
+   * @brief getStrain_ function returns nodal strains in a table along 
+   *        with the weights.
+   *
+   * @param[out] table     Table containing post-processing quantities
+   * @param[out] weights   Weights
+   */     
 
   void                      getStrain_
 
     ( XTable&                 table,
       const Vector&           weights );
+  
+  /**
+   * @brief getElemStrain_ function returns element (average of
+   *        integration points) strains in a table along with the weights.
+   *
+   * @param[out] table     Table containing post-processing quantities
+   * @param[out] weights   Weights
+   */
 
   void                      getElemStrain_
 
     ( XTable&                 table,
-      const Vector&           weights );      
+      const Vector&           weights );
+
+  /**
+   * @brief getHistory_ function does nothing for linear elastic models.
+   *
+   * @param[out] table     Table containing post-processing quantities
+   * @param[out] weights   Weights
+   */  
 
   void                      getHistory_
 
     ( XTable&                 table,
       const Vector&           weights );
 
+  /**
+   * @brief checkCommit_ function does nothing for linear elastic models.
+   *
+   * @param[in,out] params Properties
+   */  
+
   void                      checkCommit_
 
     ( const Properties&       params );
 
-  /* Initialize the mapping between integration points
-   * and material points 
+  /**
+   * @brief initializeIPMPMap_ function initializes the mapping between 
+   * integration points and material points.
    */
 
   void                      initializeIPMPMap_ ();
@@ -193,36 +269,25 @@ class LinearElasticityModel : public Model
 
  private:
 
-  Assignable<ElemGroup>     egroup_;
-  Assignable<ElemSet>       elems_;
-  Assignable<NodeSet>       nodes_;
+  Assignable<ElemGroup>     egroup_;         /**< Element Group assigned to this model */
+  Assignable<ElemSet>       elems_;          /**< Element Set corresponding to Element Group*/
+  Assignable<NodeSet>       nodes_;          /**< (Unique) Node Set corresponding to Element Set*/
 
-  int                       rank_;
+  int                       rank_;           /**< Mesh rank */
+  Ref<IShape>               shape_;          /**< Ref to Shape function */
 
-  Ref<IShape>               shape_;
+  Ref<XDofSpace>            dofs_;           /**< Ref to the DoF space */
+  IdxVector                 dofTypes_;       /**< DoF types vector */ 
 
-  Ref<XDofSpace>            dofs_;
-  IdxVector                 dofTypes_;
+  Matrix                    strain_;         /**< Matrix that stores strain */
 
-  Matrix                    strain_;
+  double                    rho_;            /**< Density (reqd. for mass matrix) */
+  Ref<Material>             material_;       /**< Ref to the material model */
 
-  double                    rho_;
-  Ref<Material>             material_;
+  ShapeGradsFunc            getShapeGrads_;  /**< Function for rank-based B-matrix */
+  ShapeFunc                 getShapeFuncs_;  /**< Function for rank-based N-matrix */
 
-  ShapeGradsFunc            getShapeGrads_;
-  ShapeFunc                 getShapeFuncs_;
-
-  /* 
-   *  Mapping between integration points and material points  
-   */
-
-  SparseArray <int, 2>      ipMpMap_;
-
-  /* 
-   * Integer vector holds 1 or zero to indicate if element ID is 
-   * active or not. Used to remove fully damaged element.
-   */
-
-  IdxVector                 isActive_;
+  SparseArray <int, 2>      ipMpMap_;        /**< Mapping between integration and material points */
+  IdxVector                 isActive_;       /**< Vector that removes fully damaged elements */
 
 };

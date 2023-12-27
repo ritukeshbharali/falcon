@@ -1,11 +1,6 @@
 
-/** @file PhaseFieldFractureModel.h
- *  @brief Implements the phase-field fracture model.
- *  
- *  This class implements the unified phase-field fracture
- *  model (see DOI: 10.1016/j.jmps.2017.03.015). Fracture
- *  irreversibility is enforced using the history variable
- *  approach (see DOI: doi.org/10.1016/j.cma.2010.04.011).
+/** @file PhaseFractureModel.h
+ *  @brief Phase-field fracture model.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
@@ -23,6 +18,10 @@
  *       for dissipation based arc-length solver. Set
  *       arcLenMode = true in the .pro input file to
  *       activate this option. (RB)
+ * 
+ *     - [25 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  */
 
 /* Include c++ headers */
@@ -104,7 +103,7 @@ typedef ElementGroup           ElemGroup;
 
 /** @brief 
  *  The PhaseFractureModel class implements a phase-field fracture
- *  FE Model without any convexification technique.
+ *  FE Model (without any convexification technique).
  */
 
 class PhaseFractureModel : public Model
@@ -166,14 +165,9 @@ class PhaseFractureModel : public Model
 
  private:
 
-  void                      getIntForce_
-
-    ( const Vector&           force,
-      const Vector&           state );
-
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
       const Vector&           state );
 

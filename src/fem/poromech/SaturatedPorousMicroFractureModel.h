@@ -1,19 +1,6 @@
 
 /** @file SaturatedPorousMicroFractureModel.h
- *  @brief Implements saturated porous media model with fracture.
- *  
- *  This class implements a mass conserving saturated two-phase
- *  porous media model together with phase-field fracture. Model
- *  options include randomly distributed porosity, different
- *  permeability models, arc-length solver mode ( assembles unit
- *  load, arc-length constraint ), BFGS mode ( skip phase-field 
- *  coupled terms in the stiffness matrix, keepOffDiags = false ).
- *  The model also updates the time in globdat, so that Paraview
- *  Module can print time stamps to a pvd file.
- * 
- *  Please consider citing the corresponding article
- *  (doi:10.1007/s00466-023-02380-1), if the code benefits you.
- *   
+ *  @brief Saturated porous media model with micromorphic phase-field fracture.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
@@ -27,7 +14,10 @@
  *       scheme (RB)
  *     - [24 May 2023] Added randomly distributed porosity,
  *       arc-length mode, phase-field specific BFGS mode 
- *       features (RB)  
+ *       features (RB)
+ *     - [27 December 2023] removed getIntForce_,
+ *       getMatrix_ returns the internal force if
+ *       mbuilder = nullptr. Eliminates duplicate code. (RB)
  */
 
 /* Include c++ headers */
@@ -127,7 +117,7 @@ class SaturatedPorousMicroFractureModel : public Model
  public:
 
   typedef SaturatedPorousMicroFractureModel     Self;
-  typedef Model                            Super;
+  typedef Model                                 Super;
 
   static const char*        DISP_NAMES[3];
   static const char*        SHAPE_PROP;
@@ -136,7 +126,6 @@ class SaturatedPorousMicroFractureModel : public Model
   static const char*        GENERATE_NEW_SEED;
   static const char*        KEEP_OFF_DIAGS_PROP;
   static const char*        ARCLEN_MODE_PROP;
-  static const char*        CONVEXIFY_PROP;
 
   static const char*        INTRIN_PERM_PROP;
   static const char*        FLUID_VISC_PROP;
@@ -166,8 +155,6 @@ class SaturatedPorousMicroFractureModel : public Model
   static const char*        TENSILE_STRENGTH_PROP;
   static const char*        PENALTY_PROP;
   static const char*        PRESSURE_PSI_PROP;
-  static const char*        MAX_OITER_PROP;
-  static const char*        OITER_TOL_PROP;
 
   static const char*        BRITTLE_AT1;
   static const char*        BRITTLE_AT2;
@@ -210,16 +197,9 @@ class SaturatedPorousMicroFractureModel : public Model
 
  private:
 
-  void                      getIntForce_
-
-    ( const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0,
-      const Vector&           state00 );
-
   void                      getMatrix_
 
-    ( MatrixBuilder&          mbuilder,
+    ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
       const Vector&           state,
       const Vector&           state0 );
@@ -403,7 +383,6 @@ class SaturatedPorousMicroFractureModel : public Model
   double sigmaT_;
   double beta_;
   bool   pressurePsi_;
-  bool   convexify_;
 
   /*
    * Phase-field fracture derived quantities: constants cw, p, eta,
@@ -436,16 +415,5 @@ class SaturatedPorousMicroFractureModel : public Model
 
   hist_                   preHist_;      // history of the previous load step
   hist_                   newHist_;      // history of the current iteration
-
-  // Extrapolated state vector (used for phase-field)
-
-  Vector stateExt_;
-
-  double errExt_;
-  bool   extFail_;
-  idx_t  oIter_;
-
-  idx_t  maxOIter_;
-  double oIterTol_;
 
 };
