@@ -11,5 +11,6 @@ void declareFalconBasicModels     ()
 {
   
   declarePoissonModel             ();
+  declareCahnHilliardModel        ();
 
 }

@@ -11,6 +11,7 @@
 void  declareFalconBasicModels        ();
 
 void  declarePoissonModel             ();
+void  declareCahnHilliardModel        ();
 
 
 #endif
