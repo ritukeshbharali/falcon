@@ -66,12 +66,12 @@ model = "Matrix"
 
       retention.type = "Liakopoulos";
 
-      intrin_perm   = 4.5e-13;
-      fluid_visc    = 0.001;
-      solid_stiff   = 1.0e+10;
-      fluid_stiff   = 2.2e+09;
+      intrinPerm    = 4.5e-13;
+      fluidVisc     = 0.001;
+      solidStiff    = 1.0e+10;
+      fluidStiff    = 2.2e+09;
       porosity      = 0.2975;
-      biot_coeff    = 1.0;
+      biotCoeff     = 1.0;
       dtime         = 60.0;
 
       rho_solid     = 2000.;

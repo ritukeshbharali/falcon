@@ -55,12 +55,12 @@ model = "Matrix"
         rho      = 1.0;
       };
 
-      intrin_perm   = 1.0e-14;
-      fluid_visc    = 0.0089;
-      solid_stiff   = 1.0e+10;
-      fluid_stiff   = 2.0e+09;
+      intrinPerm    = 1.0e-14;
+      fluidVisc     = 0.0089;
+      solidStiff    = 1.0e+10;
+      fluidStiff    = 2.0e+09;
       porosity      = 0.375;
-      biot_coeff    = 1.0;
+      biotCoeff     = 1.0;
       dtime         = 9.1225;
     };
     
