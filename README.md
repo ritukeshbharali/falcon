@@ -9,11 +9,11 @@ falcon is a Finite Element Analysis (FEA) software, based on the <a href="https:
 Features
 ---------------
 - Object-oriented C++
-- Modular, with highly decoupled code components
-- Several finite element models and solvers
-- Parallel computing with MPI and system level threads
-- Interface to external linear solvers, Umfpack, Intel Pardiso, and MUMPS.
-- VTK Writer for visualization with Paraview, Mayavi.
+- Modular, with highly decoupled code components.
+- Several finite element models and solvers.
+- Parallel computing with MPI and system level threads.
+- Interface to external linear solvers, AMGCL, Intel Pardiso, MUMPS, and Umfpack.
+- Paraview Module for visualization with Paraview, Mayavi.
 
 Getting started
 ---------------
