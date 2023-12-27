@@ -7,10 +7,11 @@
 //-----------------------------------------------------------------------
 
 
-void declareFalconPoroMechModels               ()
+void declareFalconPoroMechModels                ()
 {
-	declareSaturatedPorousModel                  ();
-	declareSaturatedPorousFractureModel          ();
-  declareSaturatedPorousMicroFractureModel     ();
-	declareTwoPhaseUnsaturatedPorousModel        ();
+  declareSaturatedPorousModel                   ();
+  declareSaturatedPorousFractureModel           ();
+  declareSaturatedPorousMicroFractureModel      ();
+  declareSaturatedPorousMicroFractureExtItModel ();
+  declareTwoPhaseUnsaturatedPorousModel         ();
 }

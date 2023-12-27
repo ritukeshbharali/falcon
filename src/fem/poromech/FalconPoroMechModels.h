@@ -8,10 +8,11 @@
 //-----------------------------------------------------------------------
 
 
-void  declareFalconPoroMechModels                  ();
-void  declareSaturatedPorousModel                  ();
-void  declareSaturatedPorousFractureModel          ();
-void  declareSaturatedPorousMicroFractureModel     ();
-void  declareTwoPhaseUnsaturatedPorousModel        ();
+void  declareFalconPoroMechModels                   ();
+void  declareSaturatedPorousModel                   ();
+void  declareSaturatedPorousFractureModel           ();
+void  declareSaturatedPorousMicroFractureModel      ();
+void  declareSaturatedPorousMicroFractureExtItModel ();
+void  declareTwoPhaseUnsaturatedPorousModel         ();
 
 #endif
