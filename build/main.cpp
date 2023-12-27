@@ -15,10 +15,6 @@
 #include <jive/fem/InputModule.h>
 #include <jive/fem/InitModule.h>
 #include <jive/fem/ShapeModule.h>
-#include <jive/implict/LinsolveModule.h>
-#include <jive/implict/NonlinModule.h>
-#include <jive/implict/ArclenModule.h>
-#include <jive/implict/Park3Module.h>
 #include <jive/algebra/declare.h>
 #include <jive/implict/declare.h>
 #include <jive/app/declare.h>
@@ -63,10 +59,6 @@ using jive::app::UserconfModule;
 using jive::fem::InputModule;
 using jive::fem::InitModule;
 using jive::fem::ShapeModule;
-using jive::implict::ArclenModule;
-using jive::implict::NonlinModule;
-using jive::implict::LinsolveModule;
-using jive::implict::Park3Module;
 using jive::gl::FemViewModule;
 using jive::gl::GraphModule;
 using jive::gl::DisplayModule;
@@ -161,11 +153,12 @@ Ref<Module> mainModule ()
   // Wrap chain module in a ReportModule that prints some
   // overall information about the current calculation.
 
+  #if defined(OSX)
+  return newInstance<DisplayModule> ( newInstance<ReportModule> ( "report", chain ));
+  #else
   return newInstance<ReportModule> ( "report", chain );
+  #endif
 
-  // Only for Mac OS
-
- // return newInstance<DisplayModule> ( newInstance<ReportModule> ( "report", chain ));
 }
 
 
