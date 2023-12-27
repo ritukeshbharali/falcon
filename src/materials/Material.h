@@ -85,11 +85,11 @@ class Material : public Object
 
   virtual bool           isLoading
 
-    ( const idx_t             ipoint ) const;
+    ( const idx_t           ipoint ) const;
 
   virtual bool           wasLoading
 
-    ( const idx_t             ipoint ) const;
+    ( const idx_t           ipoint ) const;
 
   bool                   despair ();
 
