@@ -515,7 +515,7 @@ That's all there is to it!
 Third party software
 ----------------------
 
-The directory `src/solvers/implicit/` contains wrappers to third party software. <b>The user is responsible for obtaining these software and abiding by their copyright and licenses.</b>
+The directory `src/solvers/linear/` contains wrappers to third party software. <b>The user is responsible for obtaining these software and abiding by their copyright and licenses.</b>
 
 
 Authors and contributors
@@ -524,4 +524,3 @@ Authors and contributors
 The authors and contributors of the falcon software package are:
  - Ritukesh Bharali 
  - Frans P. van der Meer
- - Vinh Phu Nguyen

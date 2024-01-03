@@ -4,7 +4,7 @@
 falcon
 ================
 
-falcon is a Finite Element Analysis (FEA) software, based on the <a href="https://software.dynaflow.com/jive/" target="_blank">Jem-Jive</a> libraries. The Jem and Jive libraries are developed and maintained by the <a href="https://dynaflow.com/" target="_blank">Dynaflow Research Group</a>. A significant part of this software is built upon the work of Frans van der Meer (TU Delft) and Vinh Phu Nguyen (Monash University). 
+falcon is a Finite Element Analysis (FEA) software, based on the <a href="https://software.dynaflow.com/jive/" target="_blank">Jem-Jive</a> libraries. The Jem and Jive libraries are developed and maintained by the <a href="https://dynaflow.com/" target="_blank">Dynaflow Research Group</a>. A part of this software is built upon the work of Frans van der Meer (TU Delft) and Vinh Phu Nguyen (Monash University). 
 
 Features
 ---------------
@@ -12,7 +12,8 @@ Features
 - Modular, with highly decoupled code components.
 - Several finite element models and solvers.
 - Parallel computing with MPI and system level threads.
-- Interface to external linear solvers, AMGCL, Intel Pardiso, MUMPS, and Umfpack.
+- Interface to external linear solvers, AMGCL, Pardiso (Intel, Panua), MUMPS, and Umfpack.
+- Interface to external GPU linear solver AMGX.
 - Paraview Module for visualization with Paraview, Mayavi.
 
 Getting started
