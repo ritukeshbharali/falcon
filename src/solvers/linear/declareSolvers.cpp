@@ -29,10 +29,11 @@
  */
 
 /*
- * 
  *  Updates (when, what and who)
- *     - [03 May 2022]  Added external solvers Umfpack and Intel Pardiso (RB)
- *     - [30 June 2023] Added external solver library AMGCL (RB)
+ *     - [03 May  2022] Added wrapper to Umfpack and Intel Pardiso (RB)
+ *     - [30 June 2023] Added wrapper to AMGCL (RB)
+ *     - [02 Jan  2024] Added wrapper to NVIDIA AMGX (RB)
+ *     - [02 Jan  2024] Added wrapper to Panua Pardiso (RB)
  */
 
 
@@ -63,22 +64,29 @@
 #include <jive/solver/RigidBodyRestrictor.h>
 #include <jive/solver/declare.h>
 
-#if defined(WITH_UMFPACK)
-#include "UmfpackSolver.h"
+#if defined(WITH_AMGCL)
+#include "AMGCLSolver.h"
 #endif
 
-#if defined(WITH_PARDISO)
-#include "PardisoSolver.h"
+#if defined(WITH_AMGX)
+#include "AMGX.h"
 #endif
 
 #if defined(WITH_MUMPS)
 #include "MUMPSSolver.h"
 #endif
 
-#if defined(WITH_AMGCL)
-#include "AMGCLSolver.h"
+#if defined(WITH_PANUAPARDISO)
+#include "PanuaPardisoSolver.h"
 #endif
 
+#if defined(WITH_PARDISO)
+#include "PardisoSolver.h"
+#endif
+
+#if defined(WITH_UMFPACK)
+#include "UmfpackSolver.h"
+#endif
 
 JIVE_BEGIN_PACKAGE( solver )
 
@@ -119,20 +127,28 @@ static void declareSolvers_ ()
 
   // Added user interfaces to external solvers
 
-  #if defined(WITH_PARDISO)
-  PardisoSolver       :: declare ();
+  #if defined(WITH_AMGCL)
+  AMGCLSolver         :: declare ();
   #endif
 
-  #if defined(WITH_UMFPACK)
-  UmfpackSolver       :: declare ();
+  #if defined(WITH_AMGX)
+  AMGXSolver          :: declare ();
   #endif
 
   #if defined(WITH_MUMPS)
   MUMPSSolver         :: declare ();
   #endif
 
-  #if defined(WITH_AMGCL)
-  AMGCLSolver         :: declare ();
+  #if defined(WITH_PANUAPARDISO)
+  PanuaPardisoSolver  :: declare ();
+  #endif
+
+  #if defined(WITH_PARDISO)
+  PardisoSolver       :: declare ();
+  #endif
+
+  #if defined(WITH_UMFPACK)
+  UmfpackSolver       :: declare ();
   #endif
 
 }
