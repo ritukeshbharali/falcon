@@ -32,6 +32,7 @@ typedef Tuple<double,6>       Vec6;
 typedef Tuple<double,3,3>     Mat3;
 typedef Tuple<double,4,4>     Mat4;
 typedef Tuple<double,6,6>     Mat6;
+typedef Tuple<double,6,3>     Mat63;
 
 //=======================================================================
 //   typedefs (Arrays)
