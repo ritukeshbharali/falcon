@@ -1,16 +1,15 @@
 /** 
- *  Some basic functions common to most FE models and
- *  post-processing operations are implemented. Almost
- *  all functions are built on top of codes by written
- *  by Vinh Phu Nguyen and Frans van der Meer.
+ *  Some utility functions related to shape functions.
+ *  Based on functions written by Vinh Phu Nguyen and
+ *  Frans van der Meer.
  *
  *  Updates (when, what and who)
  *     - [XX YYYY 2022], 
  */
 
 
-#ifndef BASIC_UTILS_H
-#define BASIC_UTILS_H
+#ifndef SHAPE_UTILS_H
+#define SHAPE_UTILS_H
 
 #include <jem/base/Array.h>
 #include <jem/base/Tuple.h>
@@ -51,14 +50,6 @@ using jem::io::PrintWriter;
 using jive::util::Table;
 using jive::StringVector;
 using jem::idx_t;
-
-
-enum ProblemType {
-       PlaneStrain,
-       PlaneStress,
-       AxiSymmetric
-};
-
 
 //-----------------------------------------------------------------------
 //   typedefs
@@ -124,49 +115,9 @@ typedef void       (*GetIandPFunc)
     const Vector&       I );
 
 
-//-----------------------------------------------------------------------
-//   constants
-//-----------------------------------------------------------------------
-
-// An integer array that maps the number of spatial dimensions (1, 2,
-// or 3) to the number of strain/stress components.
-
-extern const int      STRAIN_COUNTS[4];
-
-
 //***********************************************************************
 //   public functions
 //***********************************************************************
-
-//-----------------------------------------------------------------------
-//   Bubble shape functions and derivatives (Triangles)
-//-----------------------------------------------------------------------
-
-Matrix                getBubbleShapeFunctions
-
-  ( const Matrix&       ischeme,
-    const Matrix&       coords  );
-
-
-Cubix                 getBubbleShapeGradients
-
-  ( const Matrix&       ischeme,
-    const Matrix&       coords  );
-
-//-----------------------------------------------------------------------
-//   Bubble shape functions and derivatives (Quads)
-//-----------------------------------------------------------------------
-
-Matrix                getQuadBubbleShapeFunctions
-
-  ( const Matrix&       ischeme,
-    const Matrix&       coords  );
-
-
-Cubix                 getQuadBubbleShapeGradients
-
-  ( const Matrix&       ischeme,
-    const Matrix&       coords  );
 
 //-----------------------------------------------------------------------
 //   B matrix
@@ -196,7 +147,7 @@ ShapeGradsFunc        getShapeGradsFunc
 
 
 // -----------------------------------------------------------------------
-//   matrix of shape functions  N
+//   N matrix
 // -----------------------------------------------------------------------
 
 void                  get1DShapeFuncs
