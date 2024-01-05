@@ -19,7 +19,6 @@
 #ifndef MIEHE_PHASEMATERIAL_H
 #define MIEHE_PHASEMATERIAL_H
 
-#include "util/BasicUtils.h"
 #include "util/TensorUtils.h"
 #include "Material.h"
 #include "PhaseFractureMaterial.h"

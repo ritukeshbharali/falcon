@@ -14,7 +14,6 @@
 #ifndef VANGENUCHTEN_RETENTION_MATERIAL_H
 #define VANGENUCHTEN_RETENTION_MATERIAL_H
 
-#include "util/BasicUtils.h"
 #include "RetentionMaterial.h"
 
 // =======================================================

@@ -12,7 +12,6 @@
 #ifndef LIAKOPOULOS_RETENTION_MATERIAL_H
 #define LIAKOPOULOS_RETENTION_MATERIAL_H
 
-#include "util/BasicUtils.h"
 #include "RetentionMaterial.h"
 
 // =======================================================

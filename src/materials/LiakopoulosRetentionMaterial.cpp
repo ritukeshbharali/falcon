@@ -20,7 +20,7 @@
 #include <jem/numeric/algebra/matmul.h>
 #include <jem/numeric/utilities.h>
 
-#include "util/BasicUtils.h"
+#include "util/Constants.h"
 #include "LiakopoulosRetentionMaterial.h"
 
 using namespace jem;

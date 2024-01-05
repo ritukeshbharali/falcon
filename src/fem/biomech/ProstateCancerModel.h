@@ -39,7 +39,7 @@
 
 /* Include user-defined class headers */
 
-#include "util/BasicUtils.h"
+#include "util/ShapeUtils.h"
 
 using namespace jem;
 

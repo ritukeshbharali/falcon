@@ -41,6 +41,7 @@
 #include "util/TensorUtils.h"
 #include "util/TbFiller.h"
 #include "util/XNames.h"
+#include "util/Constants.h"
 
 using jive::implict::ArclenActions;
 using jive::implict::ArclenParams;

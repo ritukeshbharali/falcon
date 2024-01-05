@@ -51,7 +51,7 @@
 
 /* Include falcon headers */
 
-#include "util/BasicUtils.h"
+#include "util/ShapeUtils.h"
 #include "materials/Material.h"
 #include "materials/PhaseFractureMaterial.h"
 

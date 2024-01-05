@@ -37,7 +37,7 @@
 /* Include user-defined class headers */
 
 #include "FalconBasicModels.h"
-#include "util/BasicUtils.h"
+#include "util/ShapeUtils.h"
 #include "util/TbFiller.h"
 
 using namespace jem;

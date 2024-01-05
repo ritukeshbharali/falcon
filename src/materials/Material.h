@@ -19,6 +19,11 @@ using jive::IdxVector;
 using jive::BoolVector;
 using jive::StringVector;
 
+enum ProblemType {
+  PlaneStrain,
+  PlaneStress,
+  AxiSymmetric
+};
 
 //-----------------------------------------------------------------------
 //   class Material

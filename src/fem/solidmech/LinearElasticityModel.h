@@ -39,7 +39,7 @@
 
 /* Include falcon headers */
 
-#include "util/BasicUtils.h"
+#include "util/ShapeUtils.h"
 #include "materials/Material.h"
 
 using namespace jem;

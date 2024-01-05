@@ -14,7 +14,7 @@
  *       to update private members. (RB)
  */
 
-
+#include <jem/base/Array.h>
 #include <jem/base/System.h>
 #include <jem/base/limits.h>
 #include <jem/base/Error.h>
@@ -23,7 +23,7 @@
 #include <jem/numeric/algebra/matmul.h>
 #include <jem/numeric/utilities.h>
 
-#include "util/BasicUtils.h"
+#include "util/Constants.h"
 #include "BourdinPhaseMaterial.h"
 
 using namespace jem;

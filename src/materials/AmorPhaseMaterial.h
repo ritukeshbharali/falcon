@@ -18,7 +18,6 @@
 #ifndef AMOR_PHASEMATERIAL_H
 #define AMOR_PHASEMATERIAL_H
 
-#include "util/BasicUtils.h"
 #include "Material.h"
 #include "PhaseFractureMaterial.h"
 

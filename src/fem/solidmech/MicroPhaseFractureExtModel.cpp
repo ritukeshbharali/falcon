@@ -29,6 +29,7 @@
 #include "MicroPhaseFractureExtModel.h"
 #include "util/TbFiller.h"
 #include "util/XNames.h"
+#include "util/Constants.h"
 
 #include "materials/Material.h"
 #include "materials/PhaseFractureMaterial.h"

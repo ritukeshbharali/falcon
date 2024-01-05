@@ -17,7 +17,6 @@
 #ifndef BOURDIN_PHASEMATERIAL_H
 #define BOURDIN_PHASEMATERIAL_H
 
-#include "util/BasicUtils.h"
 #include "Material.h"
 #include "HookeMaterial.h"
 #include "PhaseFractureMaterial.h"

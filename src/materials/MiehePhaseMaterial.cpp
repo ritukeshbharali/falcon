@@ -15,6 +15,7 @@
  *       to update private members. (RB)
  */
 
+#include <jem/base/Array.h>
 #include <jem/base/System.h>
 #include <jem/base/limits.h>
 #include <jem/base/Error.h>
@@ -24,7 +25,8 @@
 #include <jem/numeric/utilities.h>
 #include <jem/numeric/algebra/EigenUtils.h>
 
-#include "util/BasicUtils.h"
+#include "util/Constants.h"
+#include "util/MathUtils.h"
 #include "util/TensorUtils.h"
 
 #include "MiehePhaseMaterial.h"

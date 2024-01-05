@@ -7,7 +7,7 @@
 #include <jem/numeric/algebra/utilities.h>
 
 #include "HookeMaterial.h"
-#include "util/BasicUtils.h"
+#include "util/Constants.h"
 
 #include <cstdlib>
 

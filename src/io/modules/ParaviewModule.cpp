@@ -60,7 +60,7 @@
 /* Include user-defined class headers */
 
 #include "ParaviewModule.h"
-#include "util/BasicUtils.h"
+#include "util/TableUtils.h"
 #include "util/XNames.h"
 
 #include <stdio.h>

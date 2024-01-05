@@ -25,6 +25,7 @@
 #include "LinearElasticityModel.h"
 #include "materials/HookeMaterial.h"
 #include "util/TbFiller.h"
+#include "util/Constants.h"
 
 //=======================================================================
 //   class LinearElasticityModel
