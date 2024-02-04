@@ -279,6 +279,7 @@ class ConstLoadArclenModel : public Model
   bool                      isTmpLoad_;
   bool                      hasDespaired_;
   bool                      tempStep_;
+  bool                      triedLarge_;
 
   // statistics
 

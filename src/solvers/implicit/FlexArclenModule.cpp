@@ -117,7 +117,7 @@ FlexArclenModule::FlexArclenModule
   maxDispTried_   = 0.;
   maxArcTried_    = 0.;
   swtResidual0_   = 0.;
-  arcBackup_      = 0.;
+  arcBackup_      = 0.0;
 
   writeStats_     = false;
   doTmpNonlin_    = false;

@@ -138,6 +138,7 @@ ConstLoadArclenModel::ConstLoadArclenModel
   isTmpLoad_     = false; 
   onceDown_      = false;
   hasDespaired_  = false;
+  triedLarge_    = false;
 }
 
 
