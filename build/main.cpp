@@ -41,8 +41,9 @@
 
 /* Include Falcon modules */
 
-#include "io/modules/FalconIOModules.h"           // Input-Output
-#include "steppers/FalconStepperModules.h"        // Steppers
+#include "io/modules/FalconIOModules.h"             // Input-Output
+#include "steppers/FalconStepperModules.h"          // Steppers
+#include "solvers/implicit/FalconImplicitModules.h" // Implicit
 
 
 using namespace jem;
@@ -106,6 +107,7 @@ Ref<Module> mainModule ()
 
   declareFalconIOModules          ();
   declareFalconStepperModules     ();
+  declareFalconImplicitModules    ();
 
   /* Declare all dynamically added modules in *.pro file,
    * not known at compile time.
