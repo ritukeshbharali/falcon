@@ -17,6 +17,7 @@
 
 void  declareFalconConstraintModels    ();
 
+void  declareConstLoadArclenModel      ();
 void  declareDirichletModel            ();
 void  declareNeumannModel              ();
 void  declarePeriodicModel             ();
