@@ -5,19 +5,28 @@
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
  * 
- *  NOTE: Stiffness matrix is unsymmetric.
+ *  @note: Stiffness matrix is unsymmetric. Choose linear solver
+ *         accordingly.
  *
  *  Updates (when, what and who)
- *     - [19 May 2022] Corrected the expression for the
- *       storage term, Sto (RB) [BUG FIX!]
- *     - [19 October 2022] Updated to a mass conserving
- *       scheme (RB)
- *     - [24 May 2023] Added randomly distributed porosity,
- *       arc-length mode, phase-field specific BFGS mode 
- *       features (RB)  
- *     - [25 December 2023] removed getIntForce_,
- *       getMatrix_ returns the internal force if
- *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ *     - [19 May 2022] Corrected the expression for the storage
+ *       term, Sto (RB) [BUG FIX!]
+ * 
+ *     - [19 October 2022] Updated to a mass conserving scheme. (RB)
+ * 
+ *     - [24 May 2023] Added randomly distributed porosity, arc
+ *       -length mode, phase-field specific BFGS mode features (RB)  
+ * 
+ *     - [25 December 2023] removed getIntForce_, getMatrix_ returns
+ *       the internal force if mbuilder = nullptr. Eliminates code
+ *       duplication. (RB)
+ * 
+ *     - [12 January 2024] Added fracture permeability, dynamic 
+ *       viscosity, and an interpolated permeability type. Fracture
+ *       permeability, dynamic viscosity can also be used as upper 
+ *       bounds of the fracture permeability in cubicPerm and 
+ *       cubicIsoPerm cases. Finally, unused variables and assembly
+ *       of blocks are cleaned up. (RB)
  */
 
 /* Include c++ headers */
@@ -114,7 +123,6 @@ typedef ElementGroup           ElemGroup;
  */
 
 
-
 class SaturatedPorousFractureModel : public Model
 {
  public:
@@ -133,6 +141,8 @@ class SaturatedPorousFractureModel : public Model
 
   static const char*        INTRIN_PERM_PROP;
   static const char*        FLUID_VISC_PROP;
+  static const char*        FRAC_INTRIN_PERM_PROP;
+  static const char*        FRAC_FLUID_VISC_PROP;
   static const char*        SOLID_STIFF_PROP;
   static const char*        FLUID_STIFF_PROP;
   static const char*        POROSITY_PROP;
@@ -152,12 +162,14 @@ class SaturatedPorousFractureModel : public Model
   static const char*        TENSILE_STRAIN_PERM;
   static const char*        CUBIC_PERM;
   static const char*        CUBIC_ISO_PERM;
+  static const char*        INTERPOLATED_PERM;
+
+  static const char*        BOUND_PERM_PROP;
 
   static const char*        FRACTURE_TYPE_PROP;
   static const char*        GRIFFITH_ENERGY_PROP;
   static const char*        LENGTH_SCALE_PROP;
   static const char*        TENSILE_STRENGTH_PROP;
-  static const char*        PRESSURE_PSI_PROP;
 
   static const char*        BRITTLE_AT1;
   static const char*        BRITTLE_AT2;
@@ -328,6 +340,8 @@ class SaturatedPorousFractureModel : public Model
 
   double kappa_;
   double mu_;
+  double kappaFrac_;
+  double muFrac_;
   double Ks_;
   double Kf_;
   double n0_;
@@ -337,6 +351,7 @@ class SaturatedPorousFractureModel : public Model
   double rhoF_;
 
   String permType_;
+  bool   boundPerm_;
   bool   fracPorosity_;
   bool   randPorosity_;
 
@@ -351,6 +366,7 @@ class SaturatedPorousFractureModel : public Model
   double g_;
   Vector gVec_;
   double Keff_;
+  double KeffFrac_;
   Vector voigtDiv_;
 
   // Derived

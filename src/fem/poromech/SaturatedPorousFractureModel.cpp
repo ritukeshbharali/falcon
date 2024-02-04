@@ -5,19 +5,28 @@
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 22 April 2022
  * 
- *  NOTE: Stiffness matrix is unsymmetric.
+ *  @note: Stiffness matrix is unsymmetric. Choose linear solver
+ *         accordingly.
  *
  *  Updates (when, what and who)
- *     - [19 May 2022] Corrected the expression for the
- *       storage term, Sto (RB) [BUG FIX!]
- *     - [19 October 2022] Updated to a mass conserving
- *       scheme (RB)
- *     - [24 May 2023] Added randomly distributed porosity,
- *       arc-length mode, phase-field specific BFGS mode 
- *       features (RB)  
- *     - [25 December 2023] removed getIntForce_,
- *       getMatrix_ returns the internal force if
- *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ *     - [19 May 2022] Corrected the expression for the storage
+ *       term, Sto (RB) [BUG FIX!]
+ * 
+ *     - [19 October 2022] Updated to a mass conserving scheme. (RB)
+ * 
+ *     - [24 May 2023] Added randomly distributed porosity, arc
+ *       -length mode, phase-field specific BFGS mode features (RB)  
+ * 
+ *     - [25 December 2023] removed getIntForce_, getMatrix_ returns
+ *       the internal force if mbuilder = nullptr. Eliminates code
+ *       duplication. (RB)
+ * 
+ *     - [12 January 2024] Added fracture permeability, dynamic 
+ *       viscosity, and an interpolated permeability type. Fracture
+ *       permeability, dynamic viscosity can also be used as upper 
+ *       bounds of the fracture permeability in cubicPerm and 
+ *       cubicIsoPerm cases. Finally, unused variables and assembly
+ *       of blocks are cleaned up. (RB)
  */
 
 /* Include c++ headers */
@@ -66,6 +75,8 @@ const char*  SaturatedPorousFractureModel::CONVEXIFY_PROP         = "convexify";
 
 const char*  SaturatedPorousFractureModel::INTRIN_PERM_PROP       = "intrinPerm";
 const char*  SaturatedPorousFractureModel::FLUID_VISC_PROP        = "fluidVisc";
+const char*  SaturatedPorousFractureModel::FRAC_INTRIN_PERM_PROP  = "fracIntrinPerm";
+const char*  SaturatedPorousFractureModel::FRAC_FLUID_VISC_PROP   = "fracFluidVisc";
 const char*  SaturatedPorousFractureModel::SOLID_STIFF_PROP       = "solidStiff";
 const char*  SaturatedPorousFractureModel::FLUID_STIFF_PROP       = "fluidStiff";
 const char*  SaturatedPorousFractureModel::POROSITY_PROP          = "porosity";
@@ -85,22 +96,24 @@ const char*  SaturatedPorousFractureModel::VOL_STRAIN_PERM        = "volStrainPe
 const char*  SaturatedPorousFractureModel::TENSILE_STRAIN_PERM    = "tensileStrainPerm";
 const char*  SaturatedPorousFractureModel::CUBIC_PERM             = "cubicPerm";
 const char*  SaturatedPorousFractureModel::CUBIC_ISO_PERM         = "cubicIsoPerm";
+const char*  SaturatedPorousFractureModel::INTERPOLATED_PERM      = "interpolatedPerm";
 
-const char*  SaturatedPorousFractureModel::PRESSURE_PSI_PROP      = "pressurePsi";
+const char*  SaturatedPorousFractureModel::BOUND_PERM_PROP        = "boundPerm";
+
 const char*  SaturatedPorousFractureModel::FRACTURE_TYPE_PROP     = "fractureType";
 const char*  SaturatedPorousFractureModel::GRIFFITH_ENERGY_PROP   = "griffithEnergy";
 const char*  SaturatedPorousFractureModel::LENGTH_SCALE_PROP      = "lengthScale";
 const char*  SaturatedPorousFractureModel::TENSILE_STRENGTH_PROP  = "tensileStrength";
 
-const char*  SaturatedPorousFractureModel::BRITTLE_AT1             = "at1";
-const char*  SaturatedPorousFractureModel::BRITTLE_AT2             = "at2";
-const char*  SaturatedPorousFractureModel::LINEAR_CZM              = "czmLinear";
-const char*  SaturatedPorousFractureModel::EXPONENTIAL_CZM         = "czmExponential";
-const char*  SaturatedPorousFractureModel::CORNELISSEN_CZM         = "czmCornelissen";
-const char*  SaturatedPorousFractureModel::HYPERBOLIC_CZM          = "czmHyperbolic";
+const char*  SaturatedPorousFractureModel::BRITTLE_AT1            = "at1";
+const char*  SaturatedPorousFractureModel::BRITTLE_AT2            = "at2";
+const char*  SaturatedPorousFractureModel::LINEAR_CZM             = "czmLinear";
+const char*  SaturatedPorousFractureModel::EXPONENTIAL_CZM        = "czmExponential";
+const char*  SaturatedPorousFractureModel::CORNELISSEN_CZM        = "czmCornelissen";
+const char*  SaturatedPorousFractureModel::HYPERBOLIC_CZM         = "czmHyperbolic";
 
 vector<String> SaturatedPorousFractureModel::fractureModels      (6);
-vector<String> SaturatedPorousFractureModel::permeabilityModels  (5);
+vector<String> SaturatedPorousFractureModel::permeabilityModels  (6);
 
 //-------------------------------------------------------------------------------------------------
 //   constructors & destructor
@@ -251,6 +264,14 @@ SaturatedPorousFractureModel::SaturatedPorousFractureModel
   myProps.find ( mu_, FLUID_VISC_PROP );
   myConf. set  ( FLUID_VISC_PROP, mu_ );
 
+  kappaFrac_   = 1.0e-12;
+  myProps.find ( kappaFrac_, FRAC_INTRIN_PERM_PROP );
+  myConf. set  ( FRAC_INTRIN_PERM_PROP, kappaFrac_ );
+
+  muFrac_      = 8.9e-4;
+  myProps.find ( muFrac_, FRAC_FLUID_VISC_PROP );
+  myConf. set  ( FRAC_FLUID_VISC_PROP, muFrac_ );
+
   Ks_          = 1.0e+10;
   myProps.find ( Ks_, SOLID_STIFF_PROP );
   myConf. set  ( SOLID_STIFF_PROP, Ks_ );
@@ -290,6 +311,7 @@ SaturatedPorousFractureModel::SaturatedPorousFractureModel
   permeabilityModels[2]     = TENSILE_STRAIN_PERM;
   permeabilityModels[3]     = CUBIC_PERM;
   permeabilityModels[4]     = CUBIC_ISO_PERM;
+  permeabilityModels[5]     = INTERPOLATED_PERM;
 
   // Get permeability type
 
@@ -305,11 +327,15 @@ SaturatedPorousFractureModel::SaturatedPorousFractureModel
       String("Supported types include: \n") +
       FIXED_ISO_PERM   + String(", ") + VOL_STRAIN_PERM + String(", ") +
       TENSILE_STRAIN_PERM + String(", ") + CUBIC_PERM + String(", ") +
-      CUBIC_ISO_PERM
+      CUBIC_ISO_PERM + INTERPOLATED_PERM + String(". ")
     );
   }
 
   myConf. set  ( PERM_TYPE_PROP, permType_ );
+
+  boundPerm_ = false;
+  myProps.find ( boundPerm_, BOUND_PERM_PROP );
+  myConf. set  ( BOUND_PERM_PROP, boundPerm_ );
 
   bool generateNewSeed = false;
   myProps.find ( generateNewSeed, GENERATE_NEW_SEED );
@@ -355,7 +381,8 @@ SaturatedPorousFractureModel::SaturatedPorousFractureModel
     g_    = 0.0;
   }
   
-  Keff_ = kappa_ / mu_ ;
+  Keff_     = kappa_ / mu_ ;
+  KeffFrac_ = kappaFrac_ / muFrac_ ;
 
   gVec_.resize ( rank_ );
   gVec_ = 0.0;
@@ -406,12 +433,12 @@ SaturatedPorousFractureModel::SaturatedPorousFractureModel
 
   // Setup the fracture models
 
-  fractureModels[0]     = BRITTLE_AT1;
-  fractureModels[1]     = BRITTLE_AT2;
-  fractureModels[2]     = LINEAR_CZM;
-  fractureModels[3]     = EXPONENTIAL_CZM;
-  fractureModels[4]     = CORNELISSEN_CZM;
-  fractureModels[5]     = HYPERBOLIC_CZM;
+  fractureModels[0] = BRITTLE_AT1;
+  fractureModels[1] = BRITTLE_AT2;
+  fractureModels[2] = LINEAR_CZM;
+  fractureModels[3] = EXPONENTIAL_CZM;
+  fractureModels[4] = CORNELISSEN_CZM;
+  fractureModels[5] = HYPERBOLIC_CZM;
 
   // Get fracture type
 
@@ -434,10 +461,6 @@ SaturatedPorousFractureModel::SaturatedPorousFractureModel
   myConf. set  ( FRACTURE_TYPE_PROP, fracType_ );
 
   // Configure phase-field fracture parameters
-
-  pressurePsi_ = false;
-  myProps.find ( pressurePsi_, PRESSURE_PSI_PROP );
-  myConf. set  ( PRESSURE_PSI_PROP, pressurePsi_ );
 
   gc_          = 2.7;
   myProps.find ( gc_, GRIFFITH_ENERGY_PROP );
@@ -806,10 +829,8 @@ void SaturatedPorousFractureModel::getMatrix_
 
   Matrix      elemMat21  ( nodeCount, dispCount ); // pres-disp
   Matrix      elemMat22  ( nodeCount, nodeCount ); // pres-pres
-  Matrix      elemMat23  ( nodeCount, nodeCount ); // pres-phi
 
   Matrix      elemMat31  ( nodeCount, dispCount );  // phi-disp
-  Matrix      elemMat32  ( nodeCount, nodeCount );  // phi-pres
   Matrix      elemMat33  ( nodeCount, nodeCount );  // phi-phi
   
   // B matrices
@@ -908,10 +929,8 @@ void SaturatedPorousFractureModel::getMatrix_
 
       elemMat21  = 0.0;
       elemMat22  = 0.0;
-      elemMat23  = 0.0;
 
       elemMat31  = 0.0;
-      elemMat32  = 0.0;
       elemMat33  = 0.0;
     }
 
@@ -1088,6 +1107,15 @@ void SaturatedPorousFractureModel::getMatrix_
         }
 
       }
+      else if ( permType_ == INTERPOLATED_PERM )
+      {
+        kappaComb  = Keff_ * I2;
+
+        if ( pf > 0.8 )
+        {
+          kappaComb  += 25. * ::pow( (pf - 0.8), 2.0 ) * KeffFrac_ * I2;
+        }
+      }
       else // cubic (aniso and iso versions)
       {
         kappaBulk = Keff_ * I2;
@@ -1118,7 +1146,14 @@ void SaturatedPorousFractureModel::getMatrix_
 
         // Compute fracture permeability
 
-        kappaFrac = ( wh * wh / ( 12. * mu_ ) ) * I2 ;
+        double KeffF = wh * wh / ( 12. * mu_ );
+
+        if ( boundPerm_ )
+        {
+          KeffF = min ( KeffF, KeffFrac_ );
+        }
+
+        kappaFrac = KeffF * I2 ;
 
         // Add anisotropy
 
@@ -1192,8 +1227,6 @@ void SaturatedPorousFractureModel::getMatrix_
       {
         mbuilder -> addBlock ( dispDofs, phiDofs,  elemMat13 );
         mbuilder -> addBlock ( phiDofs,  dispDofs, elemMat31 );
-        mbuilder -> addBlock ( presDofs, phiDofs,  elemMat23 );
-        mbuilder -> addBlock ( phiDofs,  presDofs, elemMat32 );  
       }
     }
 
@@ -1352,10 +1385,9 @@ void SaturatedPorousFractureModel::getArcFunc_
   Vector      stressP    ( strCount );
 
   // internal force vector:
-  // displacement, pressure, phase-field
+  // displacement, phase-field
 
   Vector      elemjac10_0 ( dispCount );
-  Vector      elemjac10_1 ( nodeCount );
   Vector      elemjac10_2 ( nodeCount );
   
   // B matrices
@@ -1429,7 +1461,6 @@ void SaturatedPorousFractureModel::getArcFunc_
     // and the tangent stiffness matrix
     
     elemjac10_0 = 0.0;
-    elemjac10_1 = 0.0;
     elemjac10_2 = 0.0;   
 
     // Loop on integration points 
@@ -1552,7 +1583,6 @@ void SaturatedPorousFractureModel::getUnitLoad_
   {
     StateVector::getOld    ( state0,  dofs_, globdat );
   }
-  
 
   // Get the arc-length parameters and set them to zero
 
@@ -1577,30 +1607,26 @@ void SaturatedPorousFractureModel::getUnitLoad_
   Matrix      coords     ( rank_, nodeCount );
 
   // current element vector state:
-  // displacement, pressure, phase-field
+  // displacement, pressure
   
   Vector      disp       ( dispCount );
   Vector      pres       ( nodeCount );
-  //Vector      phi        ( nodeCount );
 
   // old step element vector state:
-  // displacement, pressure, phase-field
+  // displacement, pressure
   
   Vector      disp0      ( dispCount );
   Vector      pres0      ( nodeCount );
-  //Vector      phi0       ( nodeCount );
 
   // current and old strains
 
   Vector      strain     ( strCount );
   Vector      strain0    ( strCount );
 
-  // internal force vector:
-  // displacement and pressure
+  // unit force vector:
+  // pressure
 
-  Vector      elemUnitForce1 ( dispCount );
   Vector      elemUnitForce2 ( nodeCount );
-  Vector      elemUnitForce3 ( nodeCount );
   
   // B matrices
   // displacement and pressure
@@ -1624,10 +1650,6 @@ void SaturatedPorousFractureModel::getUnitLoad_
   MChain4     mc4; 
   
   double      wip;
-
-  // Initialize degradation function
-
-  //double      gphi;
 
   // Iterate over all elements assigned to this model.
 
@@ -1664,20 +1686,16 @@ void SaturatedPorousFractureModel::getUnitLoad_
 
     disp = select ( state, dispDofs );
     pres = select ( state, presDofs );
-    //phi  = select ( state, phiDofs  );
 
     // Get old step nodal displacements and pressures
 
     disp0 = select ( state0, dispDofs );
     pres0 = select ( state0, presDofs );
-    //phi0  = select ( state0,  phiDofs  );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
     
-    elemUnitForce1 = 0.0;
     elemUnitForce2 = 0.0;
-    elemUnitForce3 = 0.0; 
 
     // Loop on integration points 
     
@@ -1733,9 +1751,7 @@ void SaturatedPorousFractureModel::getUnitLoad_
 
     // Assembly ...
 
-    select ( unitLoad, dispDofs ) += elemUnitForce1;
     select ( unitLoad, presDofs ) += elemUnitForce2;
-    select ( unitLoad, phiDofs  ) += elemUnitForce3;
   }
 
   // double norm2UnitLoad = jem::numeric::norm2( unitLoad );
