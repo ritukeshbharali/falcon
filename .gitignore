@@ -44,6 +44,7 @@
 *.p
 *.txt
 *.csv
+*.stats
 
 # Doc
 /docs/html
