@@ -97,31 +97,32 @@ FlexArclenModule::FlexArclenModule
       nonlinSolver_   ( solver1 ),
       arclenSolver_   ( solver2 ),
       tsArclenSolver_ ( solver3 ),
-      currentSolver_  ( solver1 ) 
+      currentSolver_  ( solver1 ),
+
+      istep_          ( 0 ),
+      istep0_         ( 0 ),
+      nCancels_       ( 0 ),
+      nContinues_     ( 0 ),
+      nRunTotal_      ( 0 ),
+      nCancTotal_     ( 0 ),
+      nContTotal_     ( 0 ),
+      nIterTotal_     ( 0 ),
+      nCommTotal_     ( 0 ),
+      nCancCont_      ( 0 ),
+      nChanges_       ( 0 ),
+      doneTmpNonlin_  ( 0 )
+
 
 {
-  istep_          = 0;
-  istep0_         = 0;
-  nCancels_       = 0;
-  nContinues_     = 0;
-
-  nRunTotal_      = 0;
-  nCancTotal_     = 0;
-  nContTotal_     = 0;
-  nIterTotal_     = 0;
-  nCancCont_      = 0;
-  nCommTotal_     = 0;
-  nChanges_       = 0;
-
   maxDispTried_   = 0.;
   maxArcTried_    = 0.;
   swtResidual0_   = 0.;
+  arcBackup_      = 0.;
 
   writeStats_     = false;
   doTmpNonlin_    = false;
   keepLargeTmp_   = true;
   isTmpNonlin_    = false;
-  doneTmpNonlin_  = 0;
   nonlinTriedAll_ = false;
   arclenTriedAll_ = false;
   arclenTriedSma_ = false;
@@ -772,8 +773,6 @@ bool FlexArclenModule::switchToArclen_
 {
   if ( arclenTriedAll_ || currentSolver_ == arclenSolver_
        || currentSolver_ == tsArclenSolver_ ) return false;
-
-  double  loadScale;
 
   model_->takeAction ( XActions::TO_ARCLEN, params, globdat );
 

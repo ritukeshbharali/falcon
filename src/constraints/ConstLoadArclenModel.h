@@ -275,7 +275,6 @@ class ConstLoadArclenModel : public Model
   // flags
 
   bool                      isLoadControl_;
-  bool                      triedLarge_;
   bool                      onceDown_;
   bool                      isTmpLoad_;
   bool                      hasDespaired_;

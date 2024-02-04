@@ -113,13 +113,14 @@ ConstLoadArclenModel::ConstLoadArclenModel
   ( const String&      name,
     const Ref<Model>&  child ) :
 
-    Super   ( name  ),
-    out_    ( System::info( name ) )
+    Super        ( name  ),
+    updated_     ( 0  ),
+    optIter_     ( 4  ),
+    swtIter_     ( 10 ),
+    maxNIter_    ( 4  ),
+    out_         ( System::info( name ) )
 
 {
-  updated_       = 0;
-  maxNIter_      = 0;
-  optIter_       = 4;
   minIncr_       = 1.0e-3;
   maxIncr_       = 1.0e+1;
   arcLength_     = 0.0;
@@ -127,7 +128,6 @@ ConstLoadArclenModel::ConstLoadArclenModel
   lastArclength_ = 0.0;
   reduction_     = .55;
   swtEner_       = Float::MAX_VALUE;
-  swtIter_       = 100;
 
   dtime_         = 1.0;
   dtime0_        = 1.0;
@@ -436,7 +436,6 @@ void ConstLoadArclenModel::evalArcFunc_
 
   double  fvalue;
   double  dEnergy;
-  double  jac11;
 
   bool fromFEModel = globdat.find ( dEnergy, XProps::FE_DISSIPATION );
 
