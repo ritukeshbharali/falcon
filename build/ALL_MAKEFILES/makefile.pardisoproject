@@ -1,0 +1,42 @@
+
+program = falcon
+
+# subdirs = ../src/util  ../src/material ../src/model ../src/module ../src/femodel ../src/solver
+subdirs = ../src/constraints \
+          $(wildcard ../src/fem/*/) \
+          $(wildcard ../src/io/*/) \
+          ../src/materials \
+          $(wildcard ../src/solvers/*/) \
+          ../src/steppers \
+          ../src/util
+          
+include $(JIVEDIR)/makefiles/prog.mk
+include $(JIVEDIR)/makefiles/packages/*.mk
+
+# With external solvers Umfpack, Intel Pardiso, MUMPS
+
+# Get root directories
+PARDISOROOT     = /home/ritukesh/libraries/pardiso
+
+# Libraries and their dependencies
+
+
+# Include directories
+
+
+# Library directories
+
+
+MY_LIBS          = pardiso
+MY_INCDIRS       = ../src /usr/include
+MY_LIBDIRS	 = . $(PARDISOROOT) /usr/lib/ 
+MY_CXX_STD_FLAGS = -DWITH_PANUAPARDISO -fopenmp
+MY_LD_FLAGS      = -static
+
+# Without external solvers
+
+#MY_LIBS          = 
+#MY_INCDIRS       = ../src
+#MY_LIBDIRS	     = 
+#MY_CXX_STD_FLAGS = 
+#MY_LD_FLAGS      = 
