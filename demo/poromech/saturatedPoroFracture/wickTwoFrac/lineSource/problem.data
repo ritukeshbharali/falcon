@@ -1,0 +1,17 @@
+
+<!-- Include the finite element mesh data from another file -->
+
+<Include source="problem.mesh"/>
+
+<!-- Define the constraints (supports). -->
+
+<NodeConstraints>
+
+  dp[ExternalNodes] = 0.0;
+  dx[ExternalNodes] = 0.0;
+  dy[ExternalNodes] = 0.0;
+  phi[Internal1Nodes] = 1.0;
+  phi[Internal2Nodes] = 1.0;
+
+
+</NodeConstraints>
