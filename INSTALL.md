@@ -13,21 +13,21 @@ On terminal, execute:
 ### Obtain Jem-Jive
 Obtain Jem and Jive either from the [Dynaflow website](https://software.dynaflow.com/jive/) or from the [Unofficial Github repo](https://github.com/ritukeshbharali/jemjive-3.0). Following the second approach,  on terminal, execute:
 > cd /home/user
-> git clone https://github.com/ritukeshbharali/jemjive-3.0.git
+git clone https://github.com/ritukeshbharali/jemjive-3.0.git
 
 ### Build Jem
 - Enter the jem directory
 - For MPI version, on terminal, run:
-> ./configure --cxx=mpic++
-> make -j 4
-> export JEMDIR='/home/user/libraries/jemjive/jem-3.0’>> ~/.bashrc
+> ./configure --cxx=mpic++ 
+make -j 4
+export JEMDIR='/home/user/libraries/jemjive/jem-3.0’>> ~/.bashrc
 
 ### Build Jive
 - Enter the jive directory
 - On terminal, run:
 > ./configure
-> make -j 4
-> export JIVEDIR='/home/user/libraries/jemjive/jive-3.0’>> ~/.bashrc
+make -j 4
+export JIVEDIR='/home/user/libraries/jemjive/jive-3.0’>> ~/.bashrc
 
 ### Build falcon
 Assuming falcon is downloaded and extracted, go to 'build' directory. On the terminal, execute:
@@ -48,12 +48,12 @@ Through containerization, all dependencies of falcon (including Jem and Jive bui
 ### Install apptainer
 Add software-properties-common to be able to use to add-apt-repository command
 > sudo apt update
-> sudo apt install -y software-properties-common
+sudo apt install -y software-properties-common
 
 Add apptainer repository and install
 > sudo add-apt-repository -y ppa:apptainer/ppa
-> sudo apt update
-> sudo apt install -y apptainer
+sudo apt update
+sudo apt install -y apptainer
 
 ### Build the container
 Enter 'apptainer' directory. On terminal, execute:
@@ -63,7 +63,7 @@ Enter 'apptainer' directory. On terminal, execute:
 Once apptainer build the container image 'jive30.sif', it can be used to build falcon, both on a local machine as well as on HPC clusters. Here is how it is done:
 - Enter the 'build' directory. On terminal, execute:
 > cp ALL_MAKEFILES/makefile.apptainer ./makefile
-> apptainer exec /path-to-apptainer/jive30.sif make opt -j4
+apptainer exec /path-to-apptainer/jive30.sif make opt -j4
 
 ### Tests
 Go to 'tests' directory, which contain some input files to check the installation. On the terminal , execute:
@@ -84,7 +84,8 @@ Most HPC clusters typically has apptainer or singularity installed. singularity 
 - Copy falcon directory to the cluster
 - To build falcon on cluster, execute on terminal:
 > cp ALL_MAKEFILES/makefile.apptainer ./makefile
-> apptainer exec /path-to-apptainer/jive30.sif make opt -j4
+apptainer exec /path-to-apptainer/jive30.sif make opt -j4
+
 - To run simulations, add the following lines to the job script. For a serial (multithreaded):
 > apptainer exec /path-to-apptainer/jive30.sif /path-to-falcon/build/falcon-opt problem.pro
 
