@@ -1,0 +1,40 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%environment
+  export JEMDIR='/home/jemjive-3.0/jem-3.0'
+  export JIVEDIR='/home/jemjive-3.0/jive-3.0'
+  
+%post
+  export JEMDIR='/home/jemjive-3.0/jem-3.0'
+  export JIVEDIR='/home/jemjive-3.0/jive-3.0'
+  
+  echo "Updating Ubuntu!"
+  apt-get -y update
+
+  echo "Installing pre-requisites for Jem-Jive"
+  apt-get install -y build-essential g++ zlib1g-dev libreadline-dev freeglut3-dev git
+
+  echo "Installing additional packages"
+  apt-get install -y openmpi-bin openmpi-common libopenmpi-dev
+
+  cd /home/
+
+  echo "Cloning Jem Jive"
+  ls .
+  git clone https://github.com/ritukeshbharali/jemjive-3.0.git
+
+  echo "Installing jem-3.0"
+  ls .
+  (cd /home/jemjive-3.0/jem-3.0 && ./configure --cxx=mpic++ && make -j -l4 && make -j -l4 clean)
+
+  echo "Installing jive-3.0"
+  ls .
+  (cd /home/jemjive-3.0/jive-3.0 && ./configure && make -j -l4 && make -j -l4 clean)
+
+  cd /
+    
+  echo "Installation complete. Success!"
+
+%labels
+  creator Ritukesh Bharali, ritukesh_dot_bharali_at_gmail_dot_com
