@@ -3,6 +3,7 @@
 
 #include "Material.h"
 #include "HookeMaterial.h"
+#include "DamageMaterial.h"
 #include "AmorPhaseMaterial.h"
 #include "BourdinPhaseMaterial.h"
 #include "MiehePhaseMaterial.h"
@@ -231,6 +232,8 @@ Ref<Material>  newMaterial
 
   if      ( type == "Hooke" )
     mat = newInstance<HookeMaterial>        ( rank, globdat );
+  else if ( type == "Damage" )
+    mat = newInstance<DamageMaterial>       ( rank, globdat );
   else if ( type == "AmorPhase" )
     mat = newInstance<AmorPhaseMaterial>    ( rank, globdat );
   else if ( type == "BourdinPhase" )
