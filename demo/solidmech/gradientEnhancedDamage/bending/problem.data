@@ -1,7 +1,7 @@
 
 <!-- Include the finite element mesh data from another file -->
 
-<Include source="four-bending1.mesh"/>
+<Include source="problem.mesh"/>
 
 <!-- Define the constraints (supports). -->
 

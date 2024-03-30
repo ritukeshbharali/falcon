@@ -12,7 +12,7 @@ log =
 input =
 {
   // Specify the name of the input data file.
-  file = "four-bending.data";
+  file = "problem.data";
 };
 
 control =
