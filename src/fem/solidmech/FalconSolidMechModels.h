@@ -17,6 +17,7 @@ void  declarePhaseFractureExtItModel     ();
 void  declareMicroPhaseFractureModel     ();
 void  declareMicroPhaseFractureExtModel  ();
 void  declareMicroPhaseFractureExtItModel();
+void  declareGradientDamageModel         ();
 
 #endif
 
