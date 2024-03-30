@@ -57,7 +57,9 @@ class HookeMaterial : public Material
 
     ( const idx_t           npoints );
 
-  virtual Matrix         getStiffMat  () const;    
+  virtual Matrix         getStiffMat  () const;
+
+  virtual ProblemType    getState     () const;    
 
   virtual Ref<Material>  clone ( ) const;
 
@@ -71,7 +73,7 @@ class HookeMaterial : public Material
   String                  stateString_;
   ProblemType             state_;
 
- private:  
+ //private:  
 
   Matrix                  stiffMat_;
 
