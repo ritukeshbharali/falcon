@@ -175,14 +175,12 @@ extraModules =
     
   };
 
-  vtk = "vtkWriter"
+  vtk = "paraview"
     {
-       fileName   = "$(CASE_NAME)_out";
-       elements = "DomainElems";
-       interval = 1;
-       data     = ["stress"];
-       dataType = "nodes";
-
+       fileName      = "$(CASE_NAME)_out";
+       elements      = "DomainElems";
+       printInterval = 1;
+       pointData      = ["stress"];
     };
 
 };

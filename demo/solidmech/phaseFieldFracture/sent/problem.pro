@@ -15,7 +15,7 @@ log =
 
 control = 
 {
-  fgMode   = false;
+  fgMode   = true;
   pause    = 0.;
   runWhile = "i < 151";
 };
@@ -49,7 +49,7 @@ model = "Matrix"
   {
     models = ["bulk","cons","lodi"];
 
-    bulk = "PhaseFractureExt"
+    bulk = "PhaseFracture"
     {
       elements = "DomainElems";
 
@@ -73,7 +73,7 @@ model = "Matrix"
       griffithEnergy  = 2.7;
       lengthScale     = 0.015;
       tensileStrength = 0.0;
-      penalty         = 6500.;
+      keepOffDiags    = false;
 
     };
     
@@ -104,17 +104,18 @@ extraModules =
   
   solver = "ReduceStepping"
   {
-    reduction      = 0.025;
+    reduction      = 0.05;
     startIncr      = 1.e-4;
     minIncr        = 1.e-12;
-    reduceStep     = 55;
+    reduceStep     = 53;
 
-    solver = "Nonlin"
+    solver = "BFGS"
     {
-      precision = 1.e-3;
-      maxIter = 10;
-      lineSearch  = false;
-      bounds = ["b1"];
+      precision  = 1.e-3;
+      maxIter    = 2500;
+      reformIter = 1;
+      lineSearch = true;
+      bounds     = ["b1"];
       solver =
       {
         type = "SkylineLU";
@@ -200,13 +201,11 @@ extraModules =
     
   };
 
-  vtk = "vtkWriter"
+  vtk = "paraview"
     {
-       fileName   = "$(CASE_NAME)_out";
-       elements = "DomainElems";
-       interval = 10;
-       data     = ["stress"];
-       dataType = "nodes";
-
+       fileName      = "$(CASE_NAME)_out";
+       elements      = "DomainElems";
+       printInterval = 10;
+       pointData     = ["stress"];
     }; 
 };

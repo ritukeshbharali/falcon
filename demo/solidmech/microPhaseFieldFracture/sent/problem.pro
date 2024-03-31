@@ -15,9 +15,9 @@ log =
 
 control = 
 {
-  fgMode   = true;
+  fgMode   = false;
   pause    = 0.;
-  runWhile = "i < 501";
+  runWhile = "i < 161";
 };
 
 
@@ -49,7 +49,7 @@ model = "Matrix"
   {
     models = ["bulk","cons","lodi"];
 
-    bulk = "MicroPhaseFractureExt"
+    bulk = "MicroPhaseFracture"
     {
       elements = "DomainElems";
 
@@ -61,7 +61,7 @@ model = "Matrix"
       
       material =
       {
-        type   = "MiehePhase";
+        type   = "BourdinPhase";
         rank   = 2;
         state  = "PLANE_STRAIN";
 
@@ -74,8 +74,8 @@ model = "Matrix"
       griffithEnergy  = 2.7;
       lengthScale     = 0.015;
       tensileStrength = 0.0;
-      keepOffDiags    = true;
-      penalty         = 250.;
+      penalty         = 500.;
+
     };
     
     cons = 
@@ -101,25 +101,36 @@ model = "Matrix"
 
 extraModules =
 {
-  modules = ["solver","graph","lodi","view","vtk"];
+  modules = ["solver","graph","lodi","view","vtk","sample"];
   
   solver = "ReduceStepping"
   {
-    reduction      = 0.05;
+    reduction      = 0.01;
     startIncr      = 1.e-4;
     minIncr        = 1.e-12;
-    reduceStep     = 52;
+    reduceStep     = 54;
 
     solver = "Nonlin"
     {
       precision = 1.e-4;
-      maxIter   = 500;
+      maxIter = 50;
+      reformIter = 0;
       lineSearch  = false;
       bounds = ["b1"];
       solver =
       {
-        type = "Pardiso";
-        numThreads = 4;
+        type = "GMRES";
+        precon.type="ILUd";
+        precon.reorder = true;
+        precon.maxFill = 3.00000;
+        precon.dropTol = 1.00000e-08;
+        precon.diagShift = 0.00000;
+        precon.zeroThreshold = 1.00000e-08;
+        precon.minSize = 0;
+        precon.quality = 1.00000;
+        precision = 1.0e-08;
+        //type = "SkylineLU";
+        //useThreads=true;
       };
 
       b1 = 
@@ -131,6 +142,25 @@ extraModules =
     };
 
   };
+
+  /*  
+  solver = 
+  {
+      type = "Nonlin";
+    
+      precision = 1.0e-6;
+    
+      maxIter   = 100;
+  
+      solver =
+      {
+        //type = "GMRES";
+        type = "SkylineLU";
+        lenient = true;
+        useThreads = true;
+      };
+  };
+  */
 
   graph =
   {
@@ -203,10 +233,22 @@ extraModules =
 
   vtk = "paraview"
     {
-       fileName   = "$(CASE_NAME)_out";
-       elements = "DomainElems";
+       fileName      = "$(CASE_NAME)_out";
+       elements      = "DomainElems";
        printInterval = 10;
-       cellData     = ["pf"];
-    };  
+       cellData      = ["pf"];
+    };
+
+  sample = "Sample"
+  {
+    // Save load displacement data in file.
+    file = "$(CASE_NAME)_iter.dat";
+    //header = "  0.00000000e+00   0.00000000e+00   0.00000000e+00";
+    dataSets = [ 
+                 "i", 
+                 "solverInfo.iterCount"
+                 //"model.model.lodi.load[0]" 
+               ];
+  };     
 
 };

@@ -115,14 +115,14 @@ extraModules =
    // if you want to write the load-displacement data to file
     lodi = "Sample"
     {
-      file       = "four-bending-lodi.dat";
+      file       = "$(CASE_NAME)_lodi.dat";
       header     = "  uy | fy ";
       dataSets   = ["-model.model.lodi.disp[1]","-0.05* model.model.lodi.load[1]"];
     };
     
     vtk = "Paraview"
     {
-       fileName   = "four-bending";
+       fileName   = "$(CASE_NAME)";
        elements = "bulk";
        interval = 10;
        dofs     = ["dx","dy"];
@@ -138,10 +138,6 @@ view = "FemView"
      height = 300;
      width  = 900;
   };
-  
-  //snapFile = "$(CASE_NAME)%2i.png";
-  configFile  = "$(CASE_NAME).view";
-  //snapWhen = "i%20";
 
   // Define some data sets.
 

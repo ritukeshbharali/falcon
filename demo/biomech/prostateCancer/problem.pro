@@ -136,14 +136,12 @@ extraModules =
     
   };
 
-  vtk = "vtkWriter"
+  vtk = "paraview"
     {
-       fileName   = "$(CASE_NAME)_out";
-       elements = "DomainElems";
-       interval = 10;
-       data     = ["source"];
-       dataType = "elems";
-
+       fileName      = "$(CASE_NAME)_out";
+       elements      = "DomainElems";
+       printInterval = 10;
+       cellData      = ["source"];
     };  
 
 };

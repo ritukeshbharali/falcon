@@ -62,7 +62,7 @@ model = "Matrix"
       material =
       {
         type   = "Hooke";
-        dim    = 2;
+        rank   = 2;
         state  = "PLANE_STRAIN";
 
         young    = 20.e+3;
@@ -119,13 +119,11 @@ extraModules =
       dataSets   = ["model.model.lodi.disp[1]","model.model.lodi.load[1]"];
     }; 
 
-  vtk = "vtkWriter"
+  vtk = "paraview"
     {
-       fileName   = "$(CASE_NAME)_out";
-       elements = "DomainElems";
-       interval = 1;
-       data     = ["stress"];
-       dataType = "elems";
-
+       fileName      = "$(CASE_NAME)_out";
+       elements      = "DomainElems";
+       printInterval = 1;
+       cellData      = ["stress"];
     };
 };

@@ -8,7 +8,7 @@ control =
 {
   fgMode   = false;
   pause    = 0.;
-  runWhile = "i < 1000";
+  runWhile = "i < 10";
 };
 
 input =
@@ -25,7 +25,7 @@ model = "Matrix"
   {
     models = [ "bulk",  "force"];
 
-    bulk = "SaturatedPoro"
+    bulk = "SaturatedPorous"
     {
       elements = "DomainElems";
 
@@ -150,14 +150,12 @@ extraModules =
     
   };
 
-  vtk = "vtkWriter"
+  vtk = "paraview"
     {
-       fileName   = "$(CASE_NAME)_out";
-       elements = "DomainElems";
-       interval = 100;
-       data     = ["stress"];
-       dataType = "nodes";
-
+       fileName      = "$(CASE_NAME)_out";
+       elements      = "DomainElems";
+       printInterval = 1;
+       pointData     = ["stress"];
     };
 
 };
