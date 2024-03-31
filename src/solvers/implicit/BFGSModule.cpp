@@ -1218,14 +1218,14 @@ bool BFGSModule::solve_
 
       lineSearch_ ( w, globdat );
 
-      /*if ( w.hasBounds() && (w.rnorm > (lsearchTol_ * rnorm0)) )
+      if ( w.hasBounds() && (w.rnorm > (lsearchTol_ * rnorm0)) )
       {
 
         // Try again with a steepest descent search direction.
 
           lineSearch2_ ( w, globdat );
 
-      }*/
+      }
     }
     else
     {
