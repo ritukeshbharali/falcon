@@ -49,7 +49,7 @@ model = "Matrix"
   {
     models = ["bulk","cons","lodi"];
 
-    bulk = "MicroPhaseFracture"
+    bulk = "MicroPhaseFractureExt"
     {
       elements = "DomainElems";
 
@@ -112,25 +112,15 @@ extraModules =
 
     solver = "Nonlin"
     {
-      precision = 1.e-4;
-      maxIter = 50;
-      reformIter = 0;
-      lineSearch  = false;
-      bounds = ["b1"];
+      precision  = 1.e-3;
+      maxIter    = 2500;
+      //reformIter = 0;
+      lineSearch = false;
+      bounds     = ["b1"];
       solver =
       {
-        type = "GMRES";
-        precon.type="ILUd";
-        precon.reorder = true;
-        precon.maxFill = 3.00000;
-        precon.dropTol = 1.00000e-08;
-        precon.diagShift = 0.00000;
-        precon.zeroThreshold = 1.00000e-08;
-        precon.minSize = 0;
-        precon.quality = 1.00000;
-        precision = 1.0e-08;
-        //type = "SkylineLU";
-        //useThreads=true;
+        type = "SkylineLU";
+        useThreads=true;
       };
 
       b1 = 
@@ -140,27 +130,7 @@ extraModules =
          upperBound = 1.;
       };
     };
-
   };
-
-  /*  
-  solver = 
-  {
-      type = "Nonlin";
-    
-      precision = 1.0e-6;
-    
-      maxIter   = 100;
-  
-      solver =
-      {
-        //type = "GMRES";
-        type = "SkylineLU";
-        lenient = true;
-        useThreads = true;
-      };
-  };
-  */
 
   graph =
   {
@@ -241,13 +211,11 @@ extraModules =
 
   sample = "Sample"
   {
-    // Save load displacement data in file.
+    // Save iteration data in file.
     file = "$(CASE_NAME)_iter.dat";
-    //header = "  0.00000000e+00   0.00000000e+00   0.00000000e+00";
     dataSets = [ 
                  "i", 
-                 "solverInfo.iterCount"
-                 //"model.model.lodi.load[0]" 
+                 "solverInfo.iterCount" 
                ];
   };     
 

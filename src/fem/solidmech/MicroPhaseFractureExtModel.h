@@ -1,7 +1,7 @@
 
 /** @file MicroPhaseFractureExtModel.h
- *  @brief Micromorphic phase-field fracture model with
- *         extrapolation.
+ *  @brief Micromorphic phase-field fracture model with 
+ *         extrapolation
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
@@ -14,6 +14,9 @@
  *     - [25 December 2023] removed getIntForce_,
  *       getMatrix_ returns the internal force if
  *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ * 
+ *     - [03 April 2024] Fixed bug stalls the simulation
+ *       in the first step due to a NaN local residual. (RB)
  */
 
 /* Include c++ headers */
@@ -96,7 +99,7 @@ typedef ElementGroup           ElemGroup;
 /** @brief 
  *  The MicroPhaseFractureExtModel class implements a micromorphic phase
  *  -field fracture FE Model with extrapolation based convexification 
- *  technique. 
+ *  technique and subsequent corrective iterations. 
  *  <a href="https://link.springer.com/article/10.1007/s00466-023-02380-1" target="_blank">Link to Article</a>
  */
 
@@ -162,9 +165,7 @@ class MicroPhaseFractureExtModel : public Model
 
     ( Ref<MatrixBuilder>      mbuilder,
       const Vector&           force,
-      const Vector&           state,
-      const Vector&           state0,
-      const Vector&           state00 );
+      const Vector&           state    );
 
   void                      getMatrix2_
 
@@ -199,7 +200,8 @@ class MicroPhaseFractureExtModel : public Model
 
   void                      checkCommit_
 
-    ( const Properties&       params );  
+    ( const Properties&       params,
+      const Properties&       globdat );  
 
   /* Initialize the mapping between integration points
    * and material points 
@@ -283,10 +285,13 @@ class MicroPhaseFractureExtModel : public Model
 
   struct                  hist_
   {
-    Flex<double>            phasef_ ;     // phase-field variable
+    Flex<double>          phasef_ ;     // phase-field variable
   };
 
   hist_                   preHist_;      // history of the previous load step
   hist_                   newHist_;      // history of the current iteration
 
+  // Extrapolated state vector
+
+  Vector stateExt_;
 };

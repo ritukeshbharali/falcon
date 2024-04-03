@@ -1,7 +1,7 @@
 
-/** @file MicroPhaseFractureExtModel.h
- *  @brief Micromorphic phase-field fracture model with
- *         extrapolation.
+/** @file MicroPhaseFractureExtModel.cpp
+ *  @brief Micromorphic phase-field fracture model with 
+ *         extrapolation
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
  *  Date: 14 June 2022  
@@ -14,6 +14,9 @@
  *     - [25 December 2023] removed getIntForce_,
  *       getMatrix_ returns the internal force if
  *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ * 
+ *     - [03 April 2024] Fixed bug stalls the simulation
+ *       in the first step due to NaN local residuals. (RB)
  */
 
 /* Include jem and jive headers */
@@ -22,6 +25,9 @@
 #include <jem/base/IllegalInputException.h>
 #include <jive/model/Actions.h>
 #include <jive/implict/ArclenActions.h>
+#include <jive/implict/SolverInfo.h>
+#include <jem/io/PrintWriter.h>
+#include <jem/io/FileWriter.h>
 
 /* Include other headers */
 
@@ -33,6 +39,10 @@
 
 #include "materials/Material.h"
 #include "materials/PhaseFractureMaterial.h"
+
+
+using jem::io::PrintWriter;
+using jem::io::FileWriter;
 
 
 //=======================================================================
@@ -341,6 +351,7 @@ void MicroPhaseFractureExtModel::configure
 
   preHist_.phasef_  = 0.0;
   newHist_.phasef_  = 0.0;
+
 }
 
 
@@ -350,7 +361,7 @@ void MicroPhaseFractureExtModel::configure
 
 
 void MicroPhaseFractureExtModel::getConfig ( const Properties& conf,
-                                      const Properties&  globdat )  const
+                                               const Properties& globdat )  const
 {
   Properties  myConf  = conf  .makeProps ( myName_ );
   Properties  matConf = myConf.makeProps ( MATERIAL_PROP );
@@ -379,6 +390,9 @@ bool MicroPhaseFractureExtModel::takeAction
 
   if ( action == Actions::GET_INT_VECTOR )
   {
+
+    using jive::implict::SolverInfo;
+
     Vector  state;
     Vector  state0;
     Vector  state00;
@@ -389,12 +403,23 @@ bool MicroPhaseFractureExtModel::takeAction
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
+
+    Properties  info      = SolverInfo::get ( globdat );
+    idx_t       iterCount = 0; 
+    info.find   (  iterCount , SolverInfo::ITER_COUNT );
+
+    if ( iterCount == 0 )
+    {
+      stateExt_.resize( state.size() );
+
+      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
+    }
     
     // Get the internal force vector.
 
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( nullptr, force, state, state0, state00 );
+    getMatrix_ ( nullptr, force, state );
 
     return true;
   }
@@ -403,6 +428,8 @@ bool MicroPhaseFractureExtModel::takeAction
 
   if ( action == Actions::GET_MATRIX0 )
   {
+    using jive::implict::SolverInfo;
+
     Ref<MatrixBuilder>  mbuilder;
 
     Vector  state;
@@ -415,13 +442,23 @@ bool MicroPhaseFractureExtModel::takeAction
     StateVector::get       ( state,   dofs_, globdat );
     StateVector::getOld    ( state0,  dofs_, globdat );
     StateVector::getOldOld ( state00, dofs_, globdat );
+
+    Properties  info      = SolverInfo::get ( globdat );
+    idx_t       iterCount = 0; 
+    info.find   (  iterCount , SolverInfo::ITER_COUNT );
+
+    if ( iterCount == 0 )
+    {
+      stateExt_.resize( state.size() );
+      stateExt_ = state00 + ( dt_ + dt0_ )/( dt0_ + 1.e-15 ) * ( state0 - state00 );
+    }
     
     // Get the matrix builder and the internal force vector.
 
     params.get ( mbuilder, ActionParams::MATRIX0 );
     params.get ( force,    ActionParams::INT_VECTOR );
 
-    getMatrix_ ( mbuilder, force, state, state0, state00 );
+    getMatrix_ ( mbuilder, force, state );
 
     return true;
   }
@@ -454,8 +491,9 @@ bool MicroPhaseFractureExtModel::takeAction
   /** CHECK_COMMIT: Can used to discard the current step
   */ 
 
-  if ( action == Actions::CHECK_COMMIT )
+  if ( action == XActions::CHECK_COMMIT )
   {
+    checkCommit_ ( params, globdat );
     return true;
   }
 
@@ -486,9 +524,7 @@ void MicroPhaseFractureExtModel::getMatrix_
 
   ( Ref<MatrixBuilder>  mbuilder,
     const Vector&       force,
-    const Vector&       state,
-    const Vector&       state0,
-    const Vector&       state00 )
+    const Vector&       state   )
 
 {
 
@@ -518,10 +554,10 @@ void MicroPhaseFractureExtModel::getMatrix_
   
   Vector      phi0       ( phiCount );
 
-  // old old step element vector state:
+  // extrapolated element vector state:
   // micromorphic variable
   
-  Vector      phi00       ( phiCount );
+  Vector      phiEx       ( phiCount );
 
   // current
 
@@ -609,8 +645,7 @@ void MicroPhaseFractureExtModel::getMatrix_
 
     // Get old step and old old step element micromorphic variable
 
-    phi0  = select ( state0,  phiDofs );
-    phi00 = select ( state00, phiDofs );
+    phiEx = select ( stateExt_, phiDofs );
 
     // Initialize the internal forces
     // and the tangent stiffness matrix
@@ -623,7 +658,7 @@ void MicroPhaseFractureExtModel::getMatrix_
       elemMat1   = 0.0;
       elemMat3   = 0.0;
       elemMat4   = 0.0;
-    }   
+    }
 
     // Loop on integration points 
     
@@ -656,12 +691,7 @@ void MicroPhaseFractureExtModel::getMatrix_
       Vector Nip           = N( ALL,ip );
 
       double pf            = dot ( Nip, phi   );
-      double pf0           = dot ( Nip, phi0  );
-      double pf00          = dot ( Nip, phi00 );
-
-      // Linearly extrapolate old old micromorphic variable to current step
-
-      double pfEx          = pf00 + ( dt_ + dt0_ )/dt0_ * ( pf0 - pf00 );
+      double pfEx          = dot ( Nip, phiEx );
 
       // Ensure extrapolated micromorphic phase-field is within bounds [0,1]
 
@@ -679,7 +709,7 @@ void MicroPhaseFractureExtModel::getMatrix_
       phaseMaterial_-> update ( stressP, stressN, stiffP, stiffN, strain, ipoint );
 
       double Psi  = phaseMaterial_->givePsi();
-      Psi         = max(Psi,Psi0_);
+      Psi = max(Psi,Psi0_);
 
       // Compute local phase-field (d) iteratively via extrapolation
 
@@ -710,11 +740,11 @@ void MicroPhaseFractureExtModel::getMatrix_
 
       // Carry out the iterative procedure
 
-      while ( abs(Res) > 1.e-4 )
+      while ( fabs(Res) > 1.e-4 )
       {
 
         // Increase iteration counter 
-        iter   += 1;        
+        iter   += 1;      
         
         // Update local phase-field
         d      -= Res/J;
@@ -889,7 +919,7 @@ void MicroPhaseFractureExtModel::getMatrix_
 
       // Compute weight of ip
 
-      wip         = ipWeights[ip];
+      wip = ipWeights[ip];
 
       // Compute stiffness matrix components
 
@@ -897,15 +927,15 @@ void MicroPhaseFractureExtModel::getMatrix_
       {
         elemMat1 += wip * mc3.matmul ( bdt, stiff, bd );
         elemMat3 -= wip * alpha * ( matmul ( Nip, matmul(dphidStrain, bd) ) );
-        elemMat4 += wip * ( alpha * ( 1.0 - dphidd ) * matmul ( Nip, Nip ) 
-                           + (2.0 * gc_*l0_/cw_) * mc2. matmul ( bet, be ) );
+        elemMat4 += wip * ( alpha * ( 1.0 - dphidd ) 
+                        * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) 
+                        * mc2. matmul ( bet, be ) );
       }
      
       // Compute internal forces
 
       elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
-      elemForce2 +=  wip * ( alpha * ( pf - d ) *  Nip + (2.0 * gc_*l0_/cw_) 
-                         * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );  
+      elemForce2 +=  wip * ( alpha * ( pf - d ) *  Nip + (2.0 * gc_*l0_/cw_) * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );  
 
     }  // End of loop on integration points
 
@@ -1522,10 +1552,10 @@ void MicroPhaseFractureExtModel::getOutputData_
 
 void MicroPhaseFractureExtModel::checkCommit_
 
-  ( const Properties&  params )
+  ( const Properties&  params,
+    const Properties&  globdat )
 
 {
-  // System::info() << myName_ << " : check commit ... do nothing!\n";
 }
 
 //-----------------------------------------------------------------------
