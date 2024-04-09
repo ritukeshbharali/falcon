@@ -1,0 +1,27 @@
+
+<!-- Include the finite element mesh data from another file -->
+
+<Include source="problem.mesh"/>
+
+<!-- Define the constraints (supports). -->
+
+<NodeConstraints>
+
+  dy[BottomNodes] = 0.0;
+  dx[BottomNodes] = 0.0;
+  dx[RightNodes]  = 0.0;
+  dx[LeftNodes]   = 0.0;
+  slip0[BottomNodes] = 0.0;
+  slip0[LeftNodes]   = 0.0;
+  slip0[TopNodes]    = 0.0;
+  slip0[RightNodes]  = 0.0;
+  slip1[BottomNodes] = 0.0;
+  slip1[LeftNodes]   = 0.0;
+  slip1[TopNodes]    = 0.0;
+  slip1[RightNodes]  = 0.0;
+  slip2[BottomNodes] = 0.0;
+  slip2[LeftNodes]   = 0.0;
+  slip2[TopNodes]    = 0.0;
+  slip2[RightNodes]  = 0.0;
+
+</NodeConstraints>

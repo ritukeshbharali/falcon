@@ -18,6 +18,7 @@ void  declareMicroPhaseFractureModel     ();
 void  declareMicroPhaseFractureExtModel  ();
 void  declareMicroPhaseFractureExtItModel();
 void  declareGradientDamageModel         ();
+void  declareCrystalViscoPlasticityModel ();
 
 #endif
 

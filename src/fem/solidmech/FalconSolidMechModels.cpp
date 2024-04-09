@@ -17,4 +17,5 @@ void declareFalconSolidMechModels      ()
   declareMicroPhaseFractureExtModel    ();
   declareMicroPhaseFractureExtItModel  ();
   declareGradientDamageModel           ();
+  declareCrystalViscoPlasticityModel   ();
 }
