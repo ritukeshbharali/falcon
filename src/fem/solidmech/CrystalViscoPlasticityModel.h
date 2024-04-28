@@ -16,6 +16,7 @@
 /* Include c++ headers */
 
 #include <vector>
+#include <cmath>
 
 /* Include jem and jive headers */
 
@@ -240,9 +241,15 @@ class CrystalViscoPlasticityModel : public Model
   void                      getStress_
 
     ( XTable&                 table,
-      const Vector&           weights );  
+      const Vector&           weights,
+      const Vector&           state   );  
 
   void                      getStrain_
+
+    ( XTable&                 table,
+      const Vector&           weights );
+
+  void                      getTau_
 
     ( XTable&                 table,
       const Vector&           weights );
@@ -272,7 +279,6 @@ class CrystalViscoPlasticityModel : public Model
   IdxVector                  dofTypes_;
   IdxVector                  dispTypes_;
   IdxVector                  slipTypes_;
-  IdxVector                  tauTypes_;
 
   Ref<HookeMaterial>         material_;
 
@@ -301,5 +307,20 @@ class CrystalViscoPlasticityModel : public Model
   vector<Vector>            Dsm_;  // sm_ \cdot E
   Matrix                    Esm_;  // sm_ \cdot E \cdot sm_
   Matrix                    D0_;   // Elastic matrix
+
+  // Store current and old step local tau
+
+  class                   Hist_
+  {
+    public:
+
+      Hist_( int n );
+
+      Vector              tau;       // tau
+  };
+
+  Flex<Hist_>             preHist_;
+  Flex<Hist_>             newHist_;
+  Flex<Hist_>*            latestHist_;
 
 };
