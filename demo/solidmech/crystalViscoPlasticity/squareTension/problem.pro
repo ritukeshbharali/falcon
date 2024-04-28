@@ -190,13 +190,19 @@ extraModules =
     };
 
     // Define the data sets to be visualized.
-    dataSets = [ "state"];
+    dataSets = [ "state", "tau"];
     
     // 'state' is the solution vector found during simulations
     state =
     {
       type   = "Vector";
       vector = "state";
+    };
+
+    tau =
+    {
+      type   = "Table";
+      vector = "nodes/tau";
     };
   
     // Settings for visualizing the finite element mesh.
@@ -220,7 +226,7 @@ extraModules =
       colors =
       {
         type = "MeshColorView";
-        data = "state[tau0]";
+        data = "tau[tau0]";
       };
     };
     
