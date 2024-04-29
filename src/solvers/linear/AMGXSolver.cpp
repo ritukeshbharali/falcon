@@ -60,7 +60,7 @@ using jive::algebra::SparseMatrixExt;
 //-----------------------------------------------------------------------
 
 
-const char*   AMGXSolver::TYPE_NAME          = "AMGX";
+const char*   AMGXSolver::TYPE_NAME          = "AmgX";
 
 const int     AMGXSolver::NEW_VALUES_        = 1 << 0;
 const int     AMGXSolver::NEW_STRUCT_        = 1 << 1;
@@ -129,7 +129,7 @@ AMGXSolver::AMGXSolver
   AMGX_SAFE_CALL(AMGX_initialize());
   AMGX_SAFE_CALL(AMGX_install_signal_handler());
 
-  AMGX_SAFE_CALL(AMGX_config_create_from_file(&AMGXcfg_, "./AMGXconfig.json"));
+  AMGX_SAFE_CALL(AMGX_config_create_from_file(&AMGXcfg_, "./solver.json"));
   AMGX_SAFE_CALL(AMGX_resources_create_simple(&AMGXrsrc_, AMGXcfg_));
 
   AMGX_SAFE_CALL(AMGX_matrix_create(&AMGXA_, AMGXrsrc_, AMGX_mode_dDDI));

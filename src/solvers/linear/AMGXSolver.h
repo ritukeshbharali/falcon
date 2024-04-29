@@ -34,19 +34,43 @@ JIVE_BEGIN_PACKAGE( solver )
 class Constrainer;
 
 
-//-----------------------------------------------------------------------
+//=======================================================================
 //   class AMGXSolver
-//-----------------------------------------------------------------------
+//=======================================================================
 
-/** @brief 
- *  The AMGXSolver class implements a wrapper to solve the linear system
- *  of equations using the NVIDIA's AMGX solver on GPU. The current
- *  implementation is limited to single CPU (no MPI).
+/** @brief Implements NVIDIA's Algebraic multi-grid (AmgX) Solver
  * 
- *  How to use AMGX, 
- *     - Set solver.type = "AMGX" in *.pro input file
- *     - Create a AMGXconfig.json file to configure the AMGX solver
- *
+ *  The class \c AMGXSolver implements a wrapper to solve the linear 
+ *  system of equations using the Algebraic Multi-grid (AmgX) solver,
+ *  distributed by NVIDIA <a href="https://github.com/NVIDIA/AMGX" target="_blank">(Link to Github repo)</a>.
+ * 
+ *  \note Wrapper works only for sequential (shared-memory) runs. 
+ * 
+ *  \todo Add configuration options.
+ * 
+ *  Below is an usage example, demonstrating how the solver is defined in
+ *  the input file:
+ * 
+ *  \code
+ *  solver = 
+    {
+      type = "Nonlin";
+    
+      precision = 1.e-6;
+    
+      maxIter   = 5;
+  
+      solver =
+      {
+        type = "AmgX"; 
+      };
+    };
+ *  \endcode
+ * 
+ *  Additionally, a 'solver.json' file is required that configures
+ *  the AmgX solver options. See <a href="https://github.com/NVIDIA/AMGX/tree/main/src/configs" target="_blank">(Github repo directory)</a>
+ *  for inspiration.  
+ * 
  */ 
 
 class AMGXSolver : public DirectSolver
