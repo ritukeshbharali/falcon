@@ -1,20 +1,20 @@
 
-/** @file AMGXSolver.cpp
- *  @brief Wrapper to solve a linear system with AMGX.
+/** @file cuDSSSolver.cpp
+ *  @brief Wrapper to solve a linear system of equations with NVIDIA cuDSS.
  * 
  *  Requires: 
  *     - NVIDIA GPU with Compute Capability >=3.0
- *     - AMGX installation with dependencies
+ *     - cuDSS installation
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
- *  Date: 02 January 2024 
+ *  Date: 23 March 2024 
  *
  *  Updates (when, what and who)
  *     - [XX YYYYY 2024]
  *       
  */
 
-#if defined(WITH_AMGX)
+#if defined(WITH_CUDSS)
 
 /* Include jem and jive headers */
 
@@ -37,10 +37,10 @@
 #include <jive/solver/StdConstrainer.h>
 #include <jive/solver/DummyConstrainer.h>
 
-#include "AMGXSolver.h"
+#include "cuDSSSolver.h"
 
 
-JEM_DEFINE_CLASS( jive::solver::AMGXSolver );
+JEM_DEFINE_CLASS( jive::solver::cuDSSSolver );
 
 
 JIVE_BEGIN_PACKAGE( solver )
@@ -52,7 +52,7 @@ using jive::algebra::SparseMatrixExt;
 
 
 //=======================================================================
-//   class AMGXSolver
+//   class cuDSSSolver
 //=======================================================================
 
 //-----------------------------------------------------------------------
@@ -60,10 +60,10 @@ using jive::algebra::SparseMatrixExt;
 //-----------------------------------------------------------------------
 
 
-const char*   AMGXSolver::TYPE_NAME          = "AmgX";
+const char*   cuDSSSolver::TYPE_NAME          = "cuDSS";
 
-const int     AMGXSolver::NEW_VALUES_        = 1 << 0;
-const int     AMGXSolver::NEW_STRUCT_        = 1 << 1;
+const int     cuDSSSolver::NEW_VALUES_        = 1 << 0;
+const int     cuDSSSolver::NEW_STRUCT_        = 1 << 1;
 
 
 //-----------------------------------------------------------------------
@@ -71,7 +71,7 @@ const int     AMGXSolver::NEW_STRUCT_        = 1 << 1;
 //-----------------------------------------------------------------------
 
 
-AMGXSolver::AMGXSolver
+cuDSSSolver::cuDSSSolver
 
   ( const String&        name,
     Ref<AbstractMatrix>  matrix,
@@ -126,36 +126,64 @@ AMGXSolver::AMGXSolver
   events_    = ~0x0;
   started_   = 0;
 
-  AMGX_SAFE_CALL(AMGX_initialize());
-  AMGX_SAFE_CALL(AMGX_install_signal_handler());
+  // cuDSS stuff
 
-  AMGX_SAFE_CALL(AMGX_config_create_from_file(&AMGXcfg_, "./solver.json"));
-  AMGX_SAFE_CALL(AMGX_resources_create_simple(&AMGXrsrc_, AMGXcfg_));
+  cudaError_t cuda_err       = cudaSuccess;
+  cudssStatus_t cudss_status = CUDSS_STATUS_SUCCESS;
 
-  AMGX_SAFE_CALL(AMGX_matrix_create(&AMGXA_, AMGXrsrc_, AMGX_mode_dDDI));
-  AMGX_SAFE_CALL(AMGX_vector_create(&AMGXb_, AMGXrsrc_, AMGX_mode_dDDI));
-  AMGX_SAFE_CALL(AMGX_vector_create(&AMGXx_, AMGXrsrc_, AMGX_mode_dDDI));
-  
-  AMGX_SAFE_CALL(AMGX_solver_create(&AMGXsolver_,    AMGXrsrc_, 
-                                     AMGX_mode_dDDI, AMGXcfg_ ));
+  // Create cuda stream
+
+  cuda_err = cudaStreamCreate(&stream);
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
+
+  // Create the cuDSS library handle
+
+  cudss_status = cudssCreate(&handle);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  cudss_status = cudssSetStream(handle, stream);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  cudss_status = cudssConfigCreate(&solverConfig);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  cudss_status = cudssDataCreate(handle, &solverData);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  mtype = CUDSS_MTYPE_GENERAL;
+  mview = CUDSS_MVIEW_FULL;
+  base  = CUDSS_BASE_ZERO;
 
   connect ( matrix_->newValuesEvent, this, & Self::valuesChanged_ );
   connect ( matrix_->newStructEvent, this, & Self::structChanged_ );
 }
 
 
-AMGXSolver::~AMGXSolver ()
+cuDSSSolver::~cuDSSSolver ()
 {
-  // Destroy AMGX resources
+  // Remember to destroy the GPU resources
 
-  AMGX_SAFE_CALL(AMGX_solver_destroy   ( AMGXsolver_));
-  AMGX_SAFE_CALL(AMGX_vector_destroy   ( AMGXx_     ));
-  AMGX_SAFE_CALL(AMGX_vector_destroy   ( AMGXb_     ));
-  AMGX_SAFE_CALL(AMGX_matrix_destroy   ( AMGXA_     ));
-  AMGX_SAFE_CALL(AMGX_resources_destroy( AMGXrsrc_  ));
+  freeDeviceMemory_();
 
-  AMGX_SAFE_CALL(AMGX_config_destroy( AMGXcfg_ ));
-  AMGX_SAFE_CALL(AMGX_finalize());
+  cudssStatus_t cudss_status = CUDSS_STATUS_SUCCESS;
+
+  cudss_status = cudssMatrixDestroy(A);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  cudss_status = cudssMatrixDestroy(x);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  cudss_status = cudssMatrixDestroy(b);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  cudss_status = cudssDataDestroy(handle, solverData);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  cudss_status = cudssConfigDestroy(solverConfig);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  cudss_status = cudssDestroy(handle);
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_(); 
 }
 
 
@@ -164,7 +192,7 @@ AMGXSolver::~AMGXSolver ()
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::start ()
+void cuDSSSolver::start ()
 {
   conman_->update ();
 
@@ -187,7 +215,7 @@ void AMGXSolver::start ()
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::finish ()
+void cuDSSSolver::finish ()
 {
   if ( started_ )
   {
@@ -201,7 +229,7 @@ void AMGXSolver::finish ()
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::clear ()
+void cuDSSSolver::clear ()
 {
   JEM_PRECHECK ( ! started_ );
 
@@ -214,7 +242,7 @@ void AMGXSolver::clear ()
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::improve
+void cuDSSSolver::improve
 
   ( const Vector&  lhs,
     const Vector&  rhs )
@@ -296,26 +324,58 @@ void AMGXSolver::improve
 
   r = f - r;
 
-  // Pin memory for the residual and the solution vector
-
-  AMGX_SAFE_CALL(AMGX_pin_memory( r. addr(), sizeof(double) * ( r.size()  )));
-  AMGX_SAFE_CALL(AMGX_pin_memory( du.addr(), sizeof(double) * ( du.size() )));
+  cudaError_t cuda_err       = cudaSuccess;
+  cudssStatus_t cudss_status = CUDSS_STATUS_SUCCESS;
 
   while ( iiter_ < 1 )
   {
+    // Upload lhs and rhs to GPU
 
-    // Upload residual to GPU device
+    cuda_err = cudaMemcpy ( du_d, du.addr(), sizeof(double) * (dofCount), cudaMemcpyHostToDevice );
+    if (cuda_err != cudaSuccess) freeDeviceMemory_();
 
-    AMGX_SAFE_CALL(AMGX_vector_upload  ( AMGXb_, r. size(), 1, r.addr() ));
-    AMGX_SAFE_CALL(AMGX_vector_set_zero( AMGXx_, du.size(), 1 ));
+    cuda_err = cudaMemcpy ( r_d, r.addr(), sizeof(double) * (dofCount), cudaMemcpyHostToDevice );
+    if (cuda_err != cudaSuccess) freeDeviceMemory_();
 
-    // Solve 
+    // Create the dense matrix on device for lhs and rhs
 
-    AMGX_SAFE_CALL(AMGX_solver_solve_with_0_initial_guess(AMGXsolver_, AMGXb_, AMGXx_));
+    cudss_status = cudssMatrixCreateDn(&b, 1, 1, dofCount, r_d, CUDA_R_64F,
+                                       CUDSS_LAYOUT_COL_MAJOR);
+    if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
 
-    // Download the solution vector
+    cudss_status = cudssMatrixCreateDn(&x, 1, 1, dofCount, du_d, CUDA_R_64F,
+                                       CUDSS_LAYOUT_COL_MAJOR);
+    if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
 
-    AMGX_SAFE_CALL(AMGX_vector_download(AMGXx_, du.addr() ));
+    // For some reason cuDSS factorization calls require the solution (du)
+    // and the right hand side (r)
+
+    // Symbolic factorization
+    cudss_status = cudssExecute(handle, CUDSS_PHASE_ANALYSIS, solverConfig, solverData,
+                                A, x, b);
+    if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+    // Numeric factorization
+    cudss_status = cudssExecute(handle, CUDSS_PHASE_FACTORIZATION, solverConfig, solverData,
+                                A, x, b);
+    if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+    // Solve
+    cudss_status = cudssExecute(handle, CUDSS_PHASE_SOLVE, solverConfig, solverData,
+                                A, x, b);
+    if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+    // Synchronize before returning control to host
+
+    cuda_err = cudaStreamSynchronize(stream);
+    if (cuda_err != cudaSuccess) freeDeviceMemory_();
+
+    // Copy solution from device to host
+
+    cuda_err = cudaMemcpy ( du.addr(), du_d, sizeof(double) * (dofCount), cudaMemcpyDeviceToHost );
+    if (cuda_err != cudaSuccess) freeDeviceMemory_();
+
+    // Update u += du
 
     u  += du;
 
@@ -355,13 +415,6 @@ void AMGXSolver::improve
   {
     conman_->getLhs ( lhs, u );
   }
-
-  AMGX_SAFE_CALL(AMGX_unpin_memory( offsets_.addr() ));
-  AMGX_SAFE_CALL(AMGX_unpin_memory( indices_.addr() ));
-  AMGX_SAFE_CALL(AMGX_unpin_memory( values_ .addr() ));
-  
-  AMGX_SAFE_CALL(AMGX_unpin_memory( r. addr() ));
-  AMGX_SAFE_CALL(AMGX_unpin_memory( du.addr() ));
 }
 
 
@@ -370,15 +423,10 @@ void AMGXSolver::improve
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::getInfo ( const Properties& info ) const
+void cuDSSSolver::getInfo ( const Properties& info ) const
 {
   double  memUsage = 0.0;
   idx_t   dofCount = matrix_->size (0);
-
-  /*if ( data_ )
-  {
-    memUsage = data_->getMemUsage ();
-  }*/
 
   Super::getInfo ( info );
 
@@ -395,7 +443,7 @@ void AMGXSolver::getInfo ( const Properties& info ) const
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::configure ( const Properties& props )
+void cuDSSSolver::configure ( const Properties& props )
 {}
 
 
@@ -404,7 +452,7 @@ void AMGXSolver::configure ( const Properties& props )
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::getConfig ( const Properties& conf ) const
+void cuDSSSolver::getConfig ( const Properties& conf ) const
 {}
 
 
@@ -413,7 +461,7 @@ void AMGXSolver::getConfig ( const Properties& conf ) const
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::setMode ( int mode )
+void cuDSSSolver::setMode ( int mode )
 {
   mode_ = mode;
 }
@@ -424,7 +472,7 @@ void AMGXSolver::setMode ( int mode )
 //-----------------------------------------------------------------------
 
 
-int AMGXSolver::getMode () const
+int cuDSSSolver::getMode () const
 {
   return mode_;
 }
@@ -435,7 +483,7 @@ int AMGXSolver::getMode () const
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::setPrecision ( double eps )
+void cuDSSSolver::setPrecision ( double eps )
 {
   JEM_PRECHECK ( eps >= 0.0 );
 
@@ -448,7 +496,7 @@ void AMGXSolver::setPrecision ( double eps )
 //-----------------------------------------------------------------------
 
 
-double AMGXSolver::getPrecision () const
+double cuDSSSolver::getPrecision () const
 {
   return precision_;
 }
@@ -459,7 +507,7 @@ double AMGXSolver::getPrecision () const
 //-----------------------------------------------------------------------
 
 
-AbstractMatrix* AMGXSolver::getMatrix () const
+AbstractMatrix* cuDSSSolver::getMatrix () const
 {
   return conman_->getInputMatrix ();
 }
@@ -470,7 +518,7 @@ AbstractMatrix* AMGXSolver::getMatrix () const
 //-----------------------------------------------------------------------
 
 
-Constraints* AMGXSolver::getConstraints () const
+Constraints* cuDSSSolver::getConstraints () const
 {
   return conman_->getConstraints ();
 }
@@ -481,7 +529,7 @@ Constraints* AMGXSolver::getConstraints () const
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::getNullSpace ( Matrix& nspace )
+void cuDSSSolver::getNullSpace ( Matrix& nspace )
 {
 }
 
@@ -491,7 +539,7 @@ void AMGXSolver::getNullSpace ( Matrix& nspace )
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::setZeroThreshold ( double eps )
+void cuDSSSolver::setZeroThreshold ( double eps )
 {
 }
 
@@ -501,7 +549,7 @@ void AMGXSolver::setZeroThreshold ( double eps )
 //-----------------------------------------------------------------------
 
 
-double AMGXSolver::getZeroThreshold () const
+double cuDSSSolver::getZeroThreshold () const
 {
   return NAN;
 }
@@ -512,7 +560,7 @@ double AMGXSolver::getZeroThreshold () const
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::setMaxZeroPivots ( idx_t n )
+void cuDSSSolver::setMaxZeroPivots ( idx_t n )
 {
 }
 
@@ -522,7 +570,7 @@ void AMGXSolver::setMaxZeroPivots ( idx_t n )
 //-----------------------------------------------------------------------
 
 
-idx_t AMGXSolver::getMaxZeroPivots () const
+idx_t cuDSSSolver::getMaxZeroPivots () const
 {
   return -1;
 }
@@ -533,7 +581,7 @@ idx_t AMGXSolver::getMaxZeroPivots () const
 //-----------------------------------------------------------------------
 
 
-Ref<Solver> AMGXSolver::makeNew
+Ref<Solver> cuDSSSolver::makeNew
 
   ( const String&      name,
     const Properties&  conf,
@@ -565,7 +613,7 @@ Ref<Solver> AMGXSolver::makeNew
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::declare ()
+void cuDSSSolver::declare ()
 {
   SolverFactory::declare ( TYPE_NAME,  & makeNew );
   SolverFactory::declare ( CLASS_NAME, & makeNew );
@@ -577,7 +625,7 @@ void AMGXSolver::declare ()
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::update_ ()
+void cuDSSSolver::update_ ()
 {
   using jem::maxOf;
   using jem::castTo;
@@ -614,23 +662,45 @@ void AMGXSolver::update_ ()
   indices_ = castTo<int> ( sm.getColumnIndices() );
   values_  =               sm.getValues ();
 
-  // Pin memory
+  // Allocate device memory for the matrix
 
-  AMGX_SAFE_CALL(AMGX_pin_memory(offsets_.addr() , sizeof(int)    * (msize + 1) ));
-  AMGX_SAFE_CALL(AMGX_pin_memory(indices_.addr() , sizeof(int)    * (nnz) ));
-  AMGX_SAFE_CALL(AMGX_pin_memory(values_ .addr() , sizeof(double) * (nnz) ));
-  
-  // Upload CSR matrix to GPU device
+  cudaError_t cuda_err       = cudaSuccess;
+  cudssStatus_t cudss_status = CUDSS_STATUS_SUCCESS;
 
-  AMGX_SAFE_CALL(AMGX_matrix_upload_all( AMGXA_, msize, nnz, 1, 1, 
-                                         offsets_.addr(), 
-                                         indices_.addr(), 
-                                         values_.addr(), 
-                                         NULL));
+  cuda_err = cudaMalloc ( &offsets_d, sizeof(int)    * (msize + 1) );
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
 
-  // Setup AMGX solver
+  cuda_err = cudaMalloc ( &indices_d, sizeof(int)    * (nnz) );
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
 
-  AMGX_SAFE_CALL(AMGX_solver_setup(AMGXsolver_, AMGXA_));
+  cuda_err = cudaMalloc ( &values_d,  sizeof(double) * (nnz) );
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
+
+  // Upload matrix data to GPU
+
+  cuda_err = cudaMemcpy ( offsets_d, offsets_.addr(), sizeof(int)    * (msize + 1), cudaMemcpyHostToDevice );
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
+
+  cuda_err = cudaMemcpy ( indices_d, indices_.addr(), sizeof(int)    * (nnz), cudaMemcpyHostToDevice );
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
+
+  cuda_err = cudaMemcpy ( values_d,  values_.addr(),  sizeof(double) * (nnz), cudaMemcpyHostToDevice );
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
+
+  // Create the CSR matrix on device
+
+  cudss_status = cudssMatrixCreateCsr( &A, msize, msize, nnz, offsets_d, NULL,
+                                      indices_d, values_d, CUDA_R_32I, CUDA_R_64F,
+                                      mtype, mview, base );
+  if (cudss_status != CUDSS_STATUS_SUCCESS) freeDeviceMemory_();
+
+  // Allocate device memory for the x and b
+
+  cuda_err = cudaMalloc ( &du_d, sizeof(double) * (msize) );
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
+
+  cuda_err = cudaMalloc ( &r_d, sizeof(double) * (msize) );
+  if (cuda_err != cudaSuccess) freeDeviceMemory_();
 
   matrix_->resetEvents ();
 
@@ -644,7 +714,7 @@ void AMGXSolver::update_ ()
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::valuesChanged_ ()
+void cuDSSSolver::valuesChanged_ ()
 {
   setEvents_ ( NEW_VALUES_ );
 }
@@ -655,7 +725,7 @@ void AMGXSolver::valuesChanged_ ()
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::structChanged_ ()
+void cuDSSSolver::structChanged_ ()
 {
   setEvents_ ( NEW_STRUCT_ );
 }
@@ -666,7 +736,7 @@ void AMGXSolver::structChanged_ ()
 //-----------------------------------------------------------------------
 
 
-void AMGXSolver::setEvents_ ( int events )
+void cuDSSSolver::setEvents_ ( int events )
 {
   if ( started_ )
   {
@@ -677,6 +747,21 @@ void AMGXSolver::setEvents_ ( int events )
   }
 
   events_ |= events;
+}
+
+
+//-----------------------------------------------------------------------
+//   freeDeviceMemory_
+//-----------------------------------------------------------------------
+
+
+void cuDSSSolver::freeDeviceMemory_ ()
+{
+  cudaFree(offsets_d);
+  cudaFree(indices_d);
+  cudaFree(values_d);
+  cudaFree(du_d);
+  cudaFree(r_d);
 }
 
 

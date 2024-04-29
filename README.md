@@ -13,7 +13,7 @@ Features
 - Several finite element models and solvers.
 - Parallel computing with MPI and system level threads.
 - Interface to external linear solvers, AMGCL, Pardiso (Intel, Panua), MUMPS, and Umfpack.
-- Interface to external GPU linear solver AMGX.
+- Interface to external GPU linear solvers, cuDSS and AMGX.
 - Paraview Module for visualization with Paraview, Mayavi.
 
 Getting started

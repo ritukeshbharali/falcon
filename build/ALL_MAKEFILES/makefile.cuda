@@ -1,0 +1,35 @@
+
+program = falcon
+
+subdirs = ../src/constraints \
+          $(wildcard ../src/fem/*/) \
+          $(wildcard ../src/io/*/) \
+          ../src/materials \
+          $(wildcard ../src/solvers/*/) \
+          ../src/steppers \
+          ../src/util
+          
+include $(JIVEDIR)/makefiles/prog.mk
+include $(JIVEDIR)/makefiles/packages/*.mk
+
+# With external cuda solvers, cuDSS and AmgX
+# Remember to setup LD_LIBRARY_PATH to cuda libraries
+
+# Libraries and their dependencies
+CUDALIBS        = cudart cudss cudart_static cublas cusolver cusparse amgxsh
+
+# Include directories
+CUDAINC         = /path/to/cuda/include/directory
+CUDSSINC        = /path/to/cudss/include/directory
+AMGXINC         = /path/to/amgx/include/directory
+
+# Library directories
+CUDALIB         = /path/to/cuda/library/directory
+CUDSSLIB        = /path/to/cudss/library/directory
+AMGXLIB         = /path/to/amgx/library/directory
+
+MY_LIBS          = $(CUDALIBS)
+MY_INCDIRS       = ../src $(CUDAINC) $(CUDSSINC) $(AMGXINC) /usr/include
+MY_LIBDIRS	     = . $(CUDALIB) $(CUDSSLIB) $(AMGXLIB) /usr/lib/
+MY_CXX_STD_FLAGS = -DWITH_AMGX -DWITH_CUDSS -fopenmp
+MY_LD_FLAGS      = -static
