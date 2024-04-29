@@ -10,8 +10,31 @@ num=$(find . -mindepth 1 -type d | wc -l)
 i=0
 passd=0
 faild=0
+skipd=0
+
+# Function to check if CUDA is available
+check_cuda() {
+    if ! command -v nvidia-smi &> /dev/null; then
+        return 1
+    fi
+    return 0
+}
 
 for d in */ ; do
+
+    # Remove trailing slash to get the folder name
+    dir_name=${d%/}
+    
+    # Check if the folder name starts with "cu" and if CUDA is required
+    if [[ "$dir_name" == cu* ]]; then
+        # Only run the test if CUDA is available
+        if ! check_cuda; then
+            echo "Skipping directory $dir_name because CUDA is not available." | tee -a tests.log
+            skipd=$((skipd+1))
+            continue
+        fi
+    fi
+    
     cd "$d"
     rm -f *.log *.dat *.pvd *.vtu
     i=$((i+1))
@@ -41,7 +64,8 @@ done
 echo " "                                                        | tee -a ./tests.log    
 echo "******************************************************* " | tee -a ./tests.log
 echo " SUMMARY:  "                                              | tee -a ./tests.log
-echo " Ran    $i of $num problems"                              | tee -a ./tests.log
-echo " Passed $passd "                                          | tee -a ./tests.log
-echo " Failed $faild "                                          | tee -a ./tests.log
+echo " Ran     $i of $num problems"                              | tee -a ./tests.log
+echo " Passed  $passd "                                          | tee -a ./tests.log
+echo " Failed  $faild "                                          | tee -a ./tests.log
+echo " Skipped $skipd "                                          | tee -a ./tests.log
 echo "******************************************************* " | tee -a ./tests.log
