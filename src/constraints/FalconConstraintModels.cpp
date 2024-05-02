@@ -8,7 +8,8 @@
 
 void declareFalconConstraintModels  ()
 {
-  declareConstLoadArclenModel        (); 
+  declareConstLoadArclenModel        ();
+  declareDispArclenModel             (); 
   declareDirichletModel              ();
   declareNeumannModel                ();
   declarePeriodicModel               ();
