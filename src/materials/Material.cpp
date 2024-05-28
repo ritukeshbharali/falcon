@@ -2,6 +2,7 @@
 #include <jem/util/Properties.h>
 
 #include "Material.h"
+#include "AbaqusMaterial.h"
 #include "HookeMaterial.h"
 #include "DamageMaterial.h"
 #include "AmorPhaseMaterial.h"
@@ -240,6 +241,8 @@ Ref<Material>  newMaterial
     mat = newInstance<BourdinPhaseMaterial> ( rank, globdat );
   else if ( type == "MiehePhase" )
     mat = newInstance<MiehePhaseMaterial>   ( rank, globdat );
+  else if ( type == "AbaqusUMAT" )
+    mat = newInstance<AbaqusMaterial>       ( rank, globdat );
   else
     matProps.propertyError ( name, "Invalid material: " + type );
 
