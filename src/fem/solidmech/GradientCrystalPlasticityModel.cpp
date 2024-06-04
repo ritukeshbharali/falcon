@@ -1,5 +1,5 @@
 
-/** @file CrystalViscoPlasticityModel.cpp
+/** @file GradientCrystalPlasticityModel.cpp
  *  @brief Crystal visco-plasticity model with gradient regularization.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
@@ -24,7 +24,7 @@
 /* Include other headers */
 
 #include "FalconSolidMechModels.h"
-#include "CrystalViscoPlasticityModel.h"
+#include "GradientCrystalPlasticityModel.h"
 #include "util/TbFiller.h"
 #include "util/XNames.h"
 #include "util/Constants.h"
@@ -36,7 +36,7 @@
 
 
 //=======================================================================
-//   class CrystalViscoPlasticityModel
+//   class GradientCrystalPlasticityModel
 //=======================================================================
 
 //-----------------------------------------------------------------------
@@ -44,13 +44,14 @@
 //-----------------------------------------------------------------------
 
 
-const char*  CrystalViscoPlasticityModel::DISP_NAMES[3]  = { "dx", "dy", "dz" };
+const char*  GradientCrystalPlasticityModel::DISP_NAMES[3]  = { "dx", "dy", "dz" };
 
-const char*  CrystalViscoPlasticityModel::SHAPE_PROP     = "shape";
-const char*  CrystalViscoPlasticityModel::MATERIAL_PROP  = "material";
-const char*  CrystalViscoPlasticityModel::DTIME_PROP     = "dtime";
-const char*  CrystalViscoPlasticityModel::SLIPS_PROP     = "slips";
-const char*  CrystalViscoPlasticityModel::RHO_PROP       = "rho";
+const char*  GradientCrystalPlasticityModel::SHAPE_PROP     = "shape";
+const char*  GradientCrystalPlasticityModel::MATERIAL_PROP  = "material";
+const char*  GradientCrystalPlasticityModel::DTIME_PROP     = "dtime";
+const char*  GradientCrystalPlasticityModel::SLIPS_PROP     = "slips";
+const char*  GradientCrystalPlasticityModel::RHO_PROP       = "rho";
+const char*  GradientCrystalPlasticityModel::IPNODES_PROP   = "ipNodes";
 
 
 //-----------------------------------------------------------------------
@@ -58,7 +59,7 @@ const char*  CrystalViscoPlasticityModel::RHO_PROP       = "rho";
 //-----------------------------------------------------------------------
 
 
-CrystalViscoPlasticityModel::CrystalViscoPlasticityModel
+GradientCrystalPlasticityModel::GradientCrystalPlasticityModel
 
   ( const String&      name,
     const Properties&  conf,
@@ -150,11 +151,13 @@ CrystalViscoPlasticityModel::CrystalViscoPlasticityModel
     );
   }
 
-  // Get the DofSpace, add displacement and slip dof types
+  // Get the DofSpace, add displacement, slip, tau dof types
+  // Displacement and slip operates on nodes
+  // tau operates on ip nodes (special!)
 
   dofs_ = XDofSpace::get ( nodes_.getData(), globdat );
 
-  dofTypes_.resize ( rank_ + nslips_ );
+  dofTypes_.resize ( rank_ + nslips_ + nslips_ );
 
   // Make a shallow copy of the first (displacement) part of 
   // dofTypes_ and add displacement dof names
@@ -178,24 +181,41 @@ CrystalViscoPlasticityModel::CrystalViscoPlasticityModel
 
   // Make a shallow copy of dofTypes_ for tau dofs
 
-  /*tauTypes_.ref ( dofTypes_[slice(rank_ + nslips_, END)] );
+  tauTypes_.ref ( dofTypes_[slice(rank_ + nslips_, END)] );
 
   for ( int i = 0; i < nslips_; i++ )
   {
     String tauName = "tau" + String(i);
     tauTypes_[i] = dofs_->addType ( tauName );
-  }*/
+  }
 
-  // Assign dofs to each node
+  // Assign displacement and slip dofs to each node
   
   dofs_->addDofs (
     elems_.getUniqueNodesOf ( egroup_.getIndices() ),
-    dofTypes_
+    dofTypes_[slice(0, rank_ + nslips_)]
   );
+
+  // Get integration point (dummy) nodes
+
+  ipnodes_  = NodeGroup::get ( IPNODES_PROP, nodes_, globdat, context );
 
   // Compute the total number of integration points.
 
-  int  ipCount = shape_->ipointCount() * egroup_.size();
+  const int ipCount = shape_->ipointCount() * egroup_.size();
+
+  if ( ipnodes_.size() != ipCount )
+  {
+    throw IllegalInputException (
+      context,
+      "wrong ipNodes size!"
+    );
+  }
+
+  dofs_->addDofs (
+    ipnodes_.getIndices(),
+    dofTypes_[slice(rank_ + nslips_, END)]
+  );
 
   // Do we need to store strains? Or compute them on-the-fly?
   // Store all tau
@@ -232,28 +252,18 @@ CrystalViscoPlasticityModel::CrystalViscoPlasticityModel
   tstar_.resize ( nslips_ );
   tauY_ .resize ( nslips_ );
   n_    .resize ( nslips_ );
+
+  // Allocate for slip - direction dyadics
   
   for ( int islip = 0; islip < nslips_; islip++ )
   {
     sm_[islip].resize( STRAIN_COUNTS[rank_] );
   }
 
-  // Allocate hist for all integration points
-
-  preHist_.reserve ( ipCount );
-  newHist_.reserve ( ipCount );
-
-  for ( idx_t ip = 0; ip < ipCount; ++ip )
-  {
-    preHist_.pushBack ( Hist_( nslips_ ) );
-    newHist_.pushBack ( Hist_( nslips_ ) );
-  }
-
-  latestHist_ = &preHist_;
 }
 
 
-CrystalViscoPlasticityModel::~CrystalViscoPlasticityModel ()
+GradientCrystalPlasticityModel::~GradientCrystalPlasticityModel ()
 {}
 
 
@@ -262,7 +272,7 @@ CrystalViscoPlasticityModel::~CrystalViscoPlasticityModel ()
 //-----------------------------------------------------------------------
 
 
-void CrystalViscoPlasticityModel::configure
+void GradientCrystalPlasticityModel::configure
 
   ( const Properties&  props,
     const Properties&  globdat )
@@ -341,6 +351,9 @@ void CrystalViscoPlasticityModel::configure
       Esm_(islip,jslip) = dot( Dsm_[islip], sm_[jslip] );
     }
   }
+
+  System::out() << "Esm: " << Esm_ << "\n";
+  System::out() << "D0 : " << D0_  << "\n";
 }
 
 
@@ -349,7 +362,7 @@ void CrystalViscoPlasticityModel::configure
 //-----------------------------------------------------------------------
 
 
-void CrystalViscoPlasticityModel::getConfig ( const Properties& conf,
+void GradientCrystalPlasticityModel::getConfig ( const Properties& conf,
                                       const Properties&  globdat )  const
 {
   Properties  myConf  = conf  .makeProps ( myName_ );
@@ -377,7 +390,7 @@ void CrystalViscoPlasticityModel::getConfig ( const Properties& conf,
 //-----------------------------------------------------------------------
 
 
-bool CrystalViscoPlasticityModel::takeAction
+bool GradientCrystalPlasticityModel::takeAction
 
   ( const String&      action,
     const Properties&  params,
@@ -455,10 +468,6 @@ bool CrystalViscoPlasticityModel::takeAction
 
   if ( action == Actions::COMMIT )
   {
-    ( newHist_ ).swap ( preHist_ );
-
-    latestHist_ =    &( preHist_ );
-
     return true;
   }
 
@@ -489,7 +498,7 @@ bool CrystalViscoPlasticityModel::takeAction
 //-----------------------------------------------------------------------
 
 
-void CrystalViscoPlasticityModel::getMatrix_
+void GradientCrystalPlasticityModel::getMatrix_
 
   ( Ref<MatrixBuilder>  mbuilder,
     const Vector&       force,
@@ -497,44 +506,55 @@ void CrystalViscoPlasticityModel::getMatrix_
     const Vector&       state0 )
 
 {
-  IdxVector   ielems     = egroup_.getIndices ();
+  // Get the elements associated with this model
+  IdxVector   ielems     = egroup_ .getIndices ();
 
+  // Get the integration point nodes for this model
+  IdxVector   ipnodes    = ipnodes_.getIndices ();
+
+  // Get some additional details
   const int   ielemCount = ielems.size         ();
   const int   nodeCount  = shape_->nodeCount   ();
   const int   ipCount    = shape_->ipointCount ();
   const int   strCount   = STRAIN_COUNTS[rank_];
-
-  // number of displacement dofs
-
   const int   dispCount  = nodeCount * rank_;
 
+  // Allocate grads and coords
   Cubix       grads      ( rank_, nodeCount, ipCount );
   Matrix      coords     ( rank_, nodeCount );
 
-  // current element vector state:
-  // displacement, slips and tau
-  
+  // Allocate vectors to store element states
+  // displacement and slip (conventional nodal qtys)
+  // In case of slip, for each slip system, we will
+  // extract a nodal vector.
   Vector         disp   ( dispCount );
   vector<Vector> slip   ( nslips_ );
   vector<Vector> slip0  ( nslips_ );
 
-  // current
+  // Allocate vectors to store gradient of slip
+  // at ip
+  vector<Vector> gradSlip   ( nslips_ );
 
+  // Allocate vector for tau dofs. These are a bit 
+  // tricky. For each slip system we extract a
+  // ip nodal vector (i.e, inner vector has size
+  // same as ipCount)
+  vector<Vector> tau    ( nslips_ );
+
+  // Allocate matrix and vectors for material update
   Matrix      stiff      ( strCount, strCount );
   Vector      stress     ( strCount );
   Vector      stressIn   ( strCount );
   Vector      strain     ( strCount );
 
-  vector<Vector> gradSlip   ( nslips_ );
-
-  // internal force vector:
-  // displacement, slip, tau
-
+  // Allocate vectors to store element internal
+  // forces
   Vector         elemForce1 ( dispCount );  // disp
   vector<Vector> elemForce2 ( nslips_   );  // slip
+  vector<Vector> elemForce3 ( nslips_   );  // tau
 
   // element stiffness matrices 
-  // (4 block components )
+  // (9 block components )
 
   // Displacement row
 
@@ -545,6 +565,12 @@ void CrystalViscoPlasticityModel::getMatrix_
 
   vector<Matrix>  elemMat21  ( nslips_ );
   vector<Matrix>  elemMat22  ( nslips_ );
+  vector<Matrix>  elemMat23  ( nslips_ );
+
+  // Tau rows
+
+  vector<Matrix>  elemMat32  ( nslips_ );
+  vector<Matrix>  elemMat33  ( nslips_ );
 
   // resize inner vectors and matrices
   // i.e., corresponding to each slip
@@ -555,6 +581,7 @@ void CrystalViscoPlasticityModel::getMatrix_
 
     slip[islip] .resize( nodeCount );
     slip0[islip].resize( nodeCount );
+    tau[islip]  .resize( ipCount   );
 
     // Gradient of slip
 
@@ -563,12 +590,18 @@ void CrystalViscoPlasticityModel::getMatrix_
     // Element slip internal force
 
     elemForce2[islip].resize( nodeCount );
+    elemForce3[islip].resize( ipCount   );
 
     // Element slip and tau matrices
 
     elemMat12[islip].resize ( dispCount, nodeCount );
+
     elemMat21[islip].resize ( nodeCount, dispCount );
     elemMat22[islip].resize ( nodeCount, nodeCount );
+    elemMat23[islip].resize ( nodeCount, ipCount   );
+
+    elemMat32[islip].resize ( ipCount, nodeCount );
+    elemMat33[islip].resize ( ipCount, ipCount   );
   }
   
   // B matrices
@@ -585,12 +618,16 @@ void CrystalViscoPlasticityModel::getMatrix_
   IdxVector         inodes   ( nodeCount );
   IdxVector         dispDofs ( dispCount );
   vector<IdxVector> slipDofs ( nslips_ );
+  vector<IdxVector> tauDofs  ( nslips_ );
+
+  // re-size the inner vectors
 
   for ( int islip = 0; islip < nslips_; islip++ )
   {
     // Element slip and tau dofs 
 
     slipDofs[islip].resize( nodeCount );
+    tauDofs[islip] .resize( ipCount   );
   }
 
   Vector      ipWeights  ( ipCount   );
@@ -653,6 +690,7 @@ void CrystalViscoPlasticityModel::getMatrix_
     for ( int islip = 0; islip < nslips_; islip++ )
     {
       elemForce2[islip] = 0.0;
+      elemForce3[islip] = 0.0;
     }
 
     if ( mbuilder != nullptr )
@@ -662,8 +700,13 @@ void CrystalViscoPlasticityModel::getMatrix_
       for ( int islip = 0; islip < nslips_; islip++ )
       {
         elemMat12[islip]   = 0.0;
+
         elemMat21[islip]   = 0.0;
         elemMat22[islip]   = 0.0;
+        elemMat23[islip]   = 0.0;
+        
+        elemMat32[islip]   = 0.0;
+        elemMat33[islip]   = 0.0;
       }    
     }
 
@@ -675,6 +718,9 @@ void CrystalViscoPlasticityModel::getMatrix_
       // of element ielem integration point ip from the mapping
 
       int ipoint = ipMpMap_ ( ielem, ip );
+
+      // We use this information later, ipnodes[ipoint] is the
+      // dummy integration point node, where tau is defined.
 
       // Compute the displacement B-matrix for this integration point.
 
@@ -692,140 +738,75 @@ void CrystalViscoPlasticityModel::getMatrix_
 
       strain_(slice(BEGIN,strCount),ipoint) = strain;
 
-      // Compute integration point slips, taus, grad slips
+      // Compute the elastic stress
 
-      const Vector Nip    = N ( ALL, ip );
+      material_->update ( stress, stiff, strain, 0  );
+
+      // Compute the integration point slips and their gradients
+
+      Vector Nip    = N ( ALL, ip );
 
       Vector ipSlip  ( nslips_ );
       Vector ipSlip0 ( nslips_ ); 
-      Vector ipTau   ( nslips_ );
 
       for ( int islip = 0; islip < nslips_; islip++ )
       {
-        // Get integration point slip and tau
+        // Get integration point slips
 
         ipSlip[islip]   = dot ( Nip, slip[islip]  );
         ipSlip0[islip]  = dot ( Nip, slip0[islip] );
-        ipTau[islip]    = preHist_[ipoint].tau[islip]; // fails!
-        //ipTau[islip]    = 0.0;
 
         // Get gradient of the slip
 
         matmul ( gradSlip[islip], be, slip[islip] );
-      }  
-
-      // Compute the elastic stress
-
-      material_->update ( stress, stiff, strain, 0  );
+      }
 
       // Compute the inelastic stress
 
       for ( int islip = 0; islip < nslips_; islip++ )
       {
-        stressIn = - ipSlip[islip] * Dsm_[islip];
+        stress -= ipSlip[islip] * Dsm_[islip];
       }
 
-      // Initialize vectors to store dPhi
-
-      Vector invdPhi ( nslips_ );
-
-      // Loop over all slip systems to solve for tau
+      // Compute the taus for this ipoint
 
       for ( int islip = 0; islip < nslips_; islip++ )
       {
-        double Phi  =   sign( ipTau[islip] ) / tstar_[islip]
-                        * ::pow( fabs( ipTau[islip] ) / 
-                                  tauY_[islip], n_[islip] );
+        tauDofs[islip][ip] = dofs_-> getDofIndex ( 
+                  ipnodes[ipoint], tauTypes_[islip] );
 
-        double dPhi =   sign( ipTau[islip] ) / tstar_[islip]
-                        * n_[islip] / ipTau[islip]
-                        * ::pow( fabs( ipTau[islip] ) / 
-                                  tauY_[islip], n_[islip] );
+        tau[islip]  = select ( state, tauDofs[islip] );
+      }
 
-        invdPhi[islip] = 1.0/dPhi;
+      // Compute the overstress function Phi and its derivative
+      // Assume n = 1 for a start!
 
-        if ( jem::Float::isNaN( dPhi ) || fabs( dPhi ) < 1.e-15 )
-        {
-          dPhi = 1.0; // switches to gradient descent
-          invdPhi[islip] = 0.0;
-        }
+      Vector Phi  ( nslips_ );
+      Vector dPhi ( nslips_ );
 
-        double g = (ipSlip[islip] - ipSlip0[islip])/dtime_
-                   - Phi;
+      for ( int islip = 0; islip < nslips_; islip++ )
+      {
+        /*Phi[islip]  = sign( tau[islip][ip] ) / tstar_[islip]
+                     * ( tau[islip][ip]  / 
+                              tauY_[islip] );
 
-        // Newton-Raphson method
+        dPhi[islip] = sign( tau[islip][ip] ) / tstar_[islip]
+                        * ( 1.0  / 
+                                  tauY_[islip] );*/
+
+        Phi[islip]  = sign( tau[islip][ip] ) / tstar_[islip]
+                     * ::pow( fabs( tau[islip][ip] ) / 
+                              tauY_[islip], n_[islip] );
+
+        dPhi[islip] = sign( tau[islip][ip] ) / tstar_[islip]
+                        * n_[islip] / tauY_[islip]
+                        * ::pow( fabs( tau[islip][ip] ) / 
+                                  tauY_[islip], n_[islip] - 1.0 );
         
-        int iiter = 0;
-
-        while ( fabs(g) > 1.e-06 && iiter < 50 )
-        {
-          ipTau[islip] += g/dPhi;
-
-          Phi  =   sign( ipTau[islip] ) / tstar_[islip]
-                 * ::pow( fabs( ipTau[islip] ) / 
-                            tauY_[islip], n_[islip] );
-
-          dPhi =   sign( ipTau[islip] ) / tstar_[islip]
-                 * n_[islip] / ipTau[islip]
-                 * ::pow( fabs( ipTau[islip] ) / 
-                           tauY_[islip], n_[islip] );
-          
-          invdPhi[islip] = 1.0/dPhi;
-
-          // If dPhi is NaN or very small, switch to gradient descent
-          
-          if ( jem::Float::isNaN( dPhi ) || fabs( dPhi ) < 1.e-15 )
-          {
-            dPhi = 1.0;
-            invdPhi[islip] = 0.0;
-          }
-
-          invdPhi[islip] = dPhi;
-
-          // Update residual g
-
-          g = (ipSlip[islip] - ipSlip0[islip])/dtime_
-                   - Phi;
-          
-          // Update iteration count
-
-          iiter++;
-
-          // NR stats debug
-
-          /*System::out() << "ipoint " << ipoint 
-                      << "\t islip " << islip 
-                      << "\t tau "   << ipTau[islip]
-                      << "\t g "   << g
-                      << "\t Phi "   << Phi
-                      << "\t dPhi "   << dPhi
-                      << "\t invdPhi "   << invdPhi[islip]
-                      << "\n";*/
-
-
-        }
-
-        /*System::out() << "Converged: "
-                      << "ipoint " << ipoint 
-                      << "\t islip " << islip 
-                      << "\t tau "   << ipTau[islip]
-                      << "\t g "   << g
-                      << "\t Phi "   << Phi
-                      << "\t dPhi "   << dPhi
-                      << "\t invdPhi "   << invdPhi[islip]
-                      << "\n";*/
-
-        // Store the tau values
-
-        newHist_[ipoint].tau[islip] = ipTau[islip];
-
-        /*System::out() << "Converged in " << iiter
-                      << "\t ipoint " << ipoint 
-                      //<< "\t g "      << g
-                      << "\t islip " << islip 
-                      << "\t pre "   << preHist_[ipoint].tau[islip]
-                      << "\t new "   << newHist_[ipoint].tau[islip]
-                      << "\n";*/
+        /*System::out() << "ipoint: " << ipoint << "\n"
+                      << "tau: "    << tau[islip][ip] << "\n"
+                      << "Phi: "    << Phi[islip] << "\n"
+                      << "dPhi: "    << dPhi[islip] << "\n";*/
       }
 
       // Compute weight of ip
@@ -836,14 +817,20 @@ void CrystalViscoPlasticityModel::getMatrix_
       // Compute the internal force components
       // -----------------------------------------
 
-      elemForce1 += wip * mc1.matmul( bdt, Vector(stress - stressIn) );
+      elemForce1 += wip * mc1.matmul( bdt, stress );
 
       for ( int islip = 0; islip < nslips_; islip++ )
       {
         elemForce2[islip] += wip * ( Nip * (- dot(Dsm_[islip],strain)
                                             + Esm_(islip,islip) * ipSlip[islip]
-                                            - ipTau[islip] ) + 
-                                    0.1 * Esm_(islip,islip) * mc1.matmul (bet, gradSlip[islip]) );
+                                            + tau[islip][ip] ) + 
+                                    1.e+3 * mc1.matmul (bet, gradSlip[islip]) );
+
+        elemForce3[islip]  = wip * ( ( ipSlip[islip] - ipSlip0[islip] ) / dtime_
+                                   - Phi[islip]  
+                                   );
+
+        select ( force, tauDofs[islip] ) = elemForce3[islip];
 
         // Note: Esm_ cross hardening is not considered here!
       }
@@ -865,9 +852,24 @@ void CrystalViscoPlasticityModel::getMatrix_
         // Slip row
 
         elemMat21[islip] -= wip * mc2.matmul ( matmul (Nip, Dsm_[islip] ), bd );
-        elemMat22[islip] += wip * (  matmul( Nip, Nip ) * ( Esm_(islip,islip)
-                                                          - invdPhi[islip] )
-                               + mc2.matmul ( bet, be ) * Esm_(islip,islip) * 0.1 );
+        elemMat22[islip] += wip * (  matmul( Nip, Nip ) * Esm_(islip,islip)
+                               + mc2.matmul ( bet, be ) * 1.e+3 );
+        elemMat23[islip](ALL,ip) += wip * (N ( ALL, ip ));
+
+        // Tau row
+
+        elemMat32[islip](ip,ALL) =  wip * (1.0/dtime_) * N (ALL, ip);
+        elemMat33[islip](ip,ip)  = -wip * dPhi[islip];
+
+        // System::out() << "tauDofs: " << tauDofs[islip] << "\n"; // Switch to Sparse matrix.type, not FEM
+        // Only when matrix.type is switched from FEM to Sparse, the following addBlokc works!
+        // Ask Erik Jan about this!
+
+        if ( mbuilder != nullptr )
+        {
+          mbuilder -> addBlock ( tauDofs[islip], slipDofs[islip], elemMat32[islip] );
+          mbuilder -> addBlock ( tauDofs[islip], tauDofs[islip],  elemMat33[islip] );
+        }
       }
 
     }  // End of loop on integration points
@@ -884,6 +886,7 @@ void CrystalViscoPlasticityModel::getMatrix_
 
         mbuilder -> addBlock ( slipDofs[islip], dispDofs,        elemMat21[islip] );
         mbuilder -> addBlock ( slipDofs[islip], slipDofs[islip], elemMat22[islip] );
+        mbuilder -> addBlock ( slipDofs[islip], tauDofs[islip],  elemMat23[islip] );
       }      
     }
 
@@ -904,7 +907,7 @@ void CrystalViscoPlasticityModel::getMatrix_
 // compute the mass matrix 
 // current implementation: consistent mass matrix
 
-void CrystalViscoPlasticityModel::getMatrix2_
+void GradientCrystalPlasticityModel::getMatrix2_
 
     ( MatrixBuilder&          mbuilder )
 {
@@ -987,7 +990,7 @@ void CrystalViscoPlasticityModel::getMatrix2_
 //   getArcFunc_
 //-----------------------------------------------------------------------
 
-void CrystalViscoPlasticityModel::getArcFunc_
+void GradientCrystalPlasticityModel::getArcFunc_
 
   ( const Properties&  params,
     const Properties&  globdat )
@@ -1000,7 +1003,7 @@ void CrystalViscoPlasticityModel::getArcFunc_
 //-----------------------------------------------------------------------
 
 
-void  CrystalViscoPlasticityModel::initializeIPMPMap_ ( )
+void  GradientCrystalPlasticityModel::initializeIPMPMap_ ( )
 
 {
   jive::IdxVector   ielems     = egroup_.getIndices  ();
@@ -1031,7 +1034,7 @@ void  CrystalViscoPlasticityModel::initializeIPMPMap_ ( )
 //-----------------------------------------------------------------------
 
 
-bool CrystalViscoPlasticityModel::getTable_
+bool GradientCrystalPlasticityModel::getTable_
 
   ( const Properties&  params,
     const Properties&  globdat )
@@ -1058,7 +1061,7 @@ bool CrystalViscoPlasticityModel::getTable_
        table->getRowItems() == nodes_.getData() )
   {
     Vector  state;
-    StateVector::get ( state,     dofs_, globdat  );
+    StateVector::get ( state, dofs_, globdat  );
 
     getStress_ ( *table, weights, state);
 
@@ -1078,7 +1081,10 @@ bool CrystalViscoPlasticityModel::getTable_
   if ( name == "tau" && 
        table->getRowItems() == nodes_.getData() )
   {
-    getTau_ ( *table, weights);
+    Vector  state;
+    StateVector::get ( state, dofs_, globdat  );
+
+    getTau_ ( *table, weights, state );
 
     return true;
   }
@@ -1107,16 +1113,16 @@ bool CrystalViscoPlasticityModel::getTable_
 //-----------------------------------------------------------------------
 
 
-void CrystalViscoPlasticityModel::getStress_
+void GradientCrystalPlasticityModel::getStress_
 
   ( XTable&        table,
     const Vector&  weights,
     const Vector&  state )
 
 {
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
-
   IdxVector  ielems     = egroup_.getIndices  ();
+
+  Matrix     sfuncs     = shape_->getShapeFunctions ();
 
   const int  ielemCount  = ielems.size         ();
   const int  nodeCount   = shape_->nodeCount   ();
@@ -1142,8 +1148,6 @@ void CrystalViscoPlasticityModel::getStress_
   }
 
   MChain1    mc1;
-
-  int        igpoint = 0;
 
   // Add the columns for the stress components to the table.
 
@@ -1217,12 +1221,17 @@ void CrystalViscoPlasticityModel::getStress_
     ndStress  = 0.0;
     ndWeights = 0.0;
 
-    for ( int ip = 0; ip < ipCount; ip++, igpoint++ )
+    for ( int ip = 0; ip < ipCount; ip++ )
     {
+      // Get the corresponding material point ipoint
+      // of element ielem integration point ip from the mapping
+
+      int ipoint = ipMpMap_ ( ielem, ip );
+
       // Extrapolate the integration point stresses to the nodes using
       // the transposed shape functions.
 
-      material_->update ( stressIp, stiff, strain_(ALL,igpoint), 0  );
+      material_->update ( stressIp, stiff, strain_(ALL,ipoint), 0  );
 
       // Compute integration point slips
 
@@ -1257,7 +1266,7 @@ void CrystalViscoPlasticityModel::getStress_
 //-----------------------------------------------------------------------
 
 
-void CrystalViscoPlasticityModel::getStrain_
+void GradientCrystalPlasticityModel::getStrain_
 
   ( XTable&        table,
     const Vector&  weights )
@@ -1277,8 +1286,6 @@ void CrystalViscoPlasticityModel::getStrain_
 
   IdxVector  inodes     ( nodeCount );
   IdxVector  jcols      ( strCount  );
-
-  int        ipoint;
 
   // Add the columns for the normal strain components to the table.
 
@@ -1329,8 +1336,6 @@ void CrystalViscoPlasticityModel::getStrain_
 
   // Iterate over all elements assigned to this model.
 
-  ipoint = 0;
-
   for ( int ie = 0; ie < ielemCount; ie++ )
   {
     // Get the global element index.
@@ -1346,8 +1351,13 @@ void CrystalViscoPlasticityModel::getStrain_
     ndStrain  = 0.0;
     ndWeights = 0.0;
 
-    for ( int ip = 0; ip < ipCount; ip++, ipoint++ )
+    for ( int ip = 0; ip < ipCount; ip++ )
     {
+      // Get the corresponding material point ipoint
+      // of element ielem integration point ip from the mapping
+
+      int ipoint = ipMpMap_ ( ielem, ip );
+
       // Extrapolate the integration point strains to the nodes using
       // the transposed shape functions.
 
@@ -1375,28 +1385,27 @@ void CrystalViscoPlasticityModel::getStrain_
 //-----------------------------------------------------------------------
 
 
-void CrystalViscoPlasticityModel::getTau_
+void GradientCrystalPlasticityModel::getTau_
 
   ( XTable&        table,
-    const Vector&  weights )
+    const Vector&  weights,
+    const Vector&  state )
 
 {
-  IdxVector  ielems     = egroup_.getIndices  ();
+  IdxVector  ielems     = egroup_ .getIndices  ();
+  IdxVector  ipnodes    = ipnodes_.getIndices  ();
+
+  Matrix     sfuncs     = shape_->getShapeFunctions ();
 
   const int  ielemCount = ielems.size         ();
   const int  nodeCount  = shape_->nodeCount   ();
   const int  ipCount    = shape_->ipointCount ();
-  const int  strCount   = STRAIN_COUNTS[rank_];
-
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
 
   Matrix     ndTau      ( nodeCount, nslips_ );
   Vector     ndWeights  ( nodeCount );
 
   IdxVector  inodes     ( nodeCount );
   IdxVector  jcols      ( nslips_   );
-
-  int        ipoint;
 
   // Add the columns to the table.
 
@@ -1407,8 +1416,6 @@ void CrystalViscoPlasticityModel::getTau_
   }
 
   // Iterate over all elements assigned to this model.
-
-  ipoint = 0;
 
   for ( int ie = 0; ie < ielemCount; ie++ )
   {
@@ -1425,12 +1432,23 @@ void CrystalViscoPlasticityModel::getTau_
     ndTau     = 0.0;
     ndWeights = 0.0;
 
-    for ( int ip = 0; ip < ipCount; ip++, ipoint++ )
+    IdxVector tauDofs ( nslips_ );
+    Vector    tau     ( nslips_ );
+
+    for ( int ip = 0; ip < ipCount; ip++ )
     {
+      // Get the corresponding material point ipoint
+      // of element ielem integration point ip from the mapping
+
+      int ipoint = ipMpMap_ ( ielem, ip );
+
+      dofs_     -> getDofIndices ( tauDofs, ipnodes[ipoint], tauTypes_ );
+      tau       = state[tauDofs];
+
       // Extrapolate the integration point taus to the nodes using
       // the transposed shape functions.
 
-      ndTau     += matmul ( sfuncs(ALL,ip), preHist_[ipoint].tau );
+      ndTau     += matmul ( sfuncs(ALL,ip), tau );
       ndWeights += sfuncs(ALL,ip);
     }
 
@@ -1459,7 +1477,7 @@ void CrystalViscoPlasticityModel::getTau_
  *  components.
  */
 
-void CrystalViscoPlasticityModel::getOutputData_
+void GradientCrystalPlasticityModel::getOutputData_
 
   ( Ref<XTable>    table,
     const Vector&  weights,
@@ -1473,7 +1491,7 @@ void CrystalViscoPlasticityModel::getOutputData_
 //   checkCommit_
 //-----------------------------------------------------------------------
 
-void CrystalViscoPlasticityModel::checkCommit_
+void GradientCrystalPlasticityModel::checkCommit_
 
   ( const Properties&  params )
 
@@ -1481,25 +1499,16 @@ void CrystalViscoPlasticityModel::checkCommit_
   // System::info() << myName_ << " : check commit ... do nothing!\n";
 }
 
-//-----------------------------------------------------------------------
-//   Hist_ constructor ( empty )
-//-----------------------------------------------------------------------
-
-CrystalViscoPlasticityModel::Hist_::Hist_( int n )
-{
-  tau.resize(n); tau = 0.0;
-}
-
 //=======================================================================
 //   related functions
 //=======================================================================
 
 //-----------------------------------------------------------------------
-//   newCrystalViscoPlasticityModel
+//   newGradientCrystalPlasticityModel
 //-----------------------------------------------------------------------
 
 
-static Ref<Model>     newCrystalViscoPlasticityModel
+static Ref<Model>     newGradientCrystalPlasticityModel
 
   ( const String&       name,
     const Properties&   conf,
@@ -1507,18 +1516,18 @@ static Ref<Model>     newCrystalViscoPlasticityModel
     const Properties&   globdat )
 
 {
-  return newInstance<CrystalViscoPlasticityModel> ( name, conf, props, globdat );
+  return newInstance<GradientCrystalPlasticityModel> ( name, conf, props, globdat );
 }
 
 
 //-----------------------------------------------------------------------
-//   declareCrystalViscoPlasticityModel
+//   declareGradientCrystalPlasticityModel
 //-----------------------------------------------------------------------
 
 
-void declareCrystalViscoPlasticityModel ()
+void declareGradientCrystalPlasticityModel ()
 {
   using jive::model::ModelFactory;
 
-  ModelFactory::declare ( "CrystalViscoPlasticity", & newCrystalViscoPlasticityModel );
+  ModelFactory::declare ( "GradientCrystalPlasticity", & newGradientCrystalPlasticityModel );
 }

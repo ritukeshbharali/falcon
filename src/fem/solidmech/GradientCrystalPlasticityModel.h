@@ -1,5 +1,5 @@
 
-/** @file CrystalViscoPlasticityModel.h
+/** @file GradientCrystalPlasticityModel.h
  *  @brief Crystal visco-plasticity model with gradient regularization.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
@@ -42,6 +42,8 @@
 #include <jive/geom/IShapeFactory.h>
 #include <jive/fem/ElementGroup.h>
 #include <jive/util/Globdat.h>
+#include <jive/fem/XNodeSet.h>
+#include <jive/fem/NodeGroup.h>
 
 /* Include falcon headers */
 
@@ -67,8 +69,10 @@ using jive::algebra::MatrixBuilder;
 using jive::model::Model;
 using jive::geom::IShape;
 using jive::fem::NodeSet;
+using jive::fem::XNodeSet;
 using jive::fem::ElementSet;
 using jive::fem::ElementGroup;
+using jive::fem::NodeGroup;
 using jive::util::Globdat;
 using std::vector;
 
@@ -87,12 +91,12 @@ typedef ElementSet             ElemSet;
 typedef ElementGroup           ElemGroup;
 
 //=======================================================================
-//   class CrystalViscoPlasticityModel
+//   class GradientCrystalPlasticityModel
 //=======================================================================
 
 /** @brief Implements crystal visco-plasticity FE model.
  * 
- *  The class \c CrystalViscoPlasticityModel implements a crystal
+ *  The class \c GradientCrystalPlasticityModel implements a crystal
  *  visco-plasticity finite element model with gradient-based 
  *  regularization of the slip(s). The displacements (2D, 3D), slip(s),
  *  and the Schmid stress(es) are considered as nodal degrees of
@@ -107,7 +111,7 @@ typedef ElementGroup           ElemGroup;
  *  \code
  *  models = ["bulk","cons","lodi"];
 
-    bulk = "CrystalViscoPlasticity"
+    bulk = "GradientCrystalPlasticity"
 
     {
       elements = "DomainElems";        // Element group
@@ -163,13 +167,13 @@ typedef ElementGroup           ElemGroup;
  *  \endcode 
  */
 
-class CrystalViscoPlasticityModel : public Model
+class GradientCrystalPlasticityModel : public Model
 {
   
  public:
 
-  typedef CrystalViscoPlasticityModel  Self;
-  typedef Model                        Super;
+  typedef GradientCrystalPlasticityModel  Self;
+  typedef Model                           Super;
 
   static const char*        DISP_NAMES[3];
   static const char*        SHAPE_PROP;
@@ -178,9 +182,10 @@ class CrystalViscoPlasticityModel : public Model
   static const char*        RHO_PROP;
 
   static const char*        SLIPS_PROP;
+  static const char*        IPNODES_PROP;
   
 
-                             CrystalViscoPlasticityModel
+                             GradientCrystalPlasticityModel
 
     ( const String&           name,
       const Properties&       conf,
@@ -206,7 +211,7 @@ class CrystalViscoPlasticityModel : public Model
 
  protected:
 
-  virtual                  ~CrystalViscoPlasticityModel  ();
+  virtual                  ~GradientCrystalPlasticityModel  ();
 
  private:
 
@@ -252,7 +257,8 @@ class CrystalViscoPlasticityModel : public Model
   void                      getTau_
 
     ( XTable&                 table,
-      const Vector&           weights );
+      const Vector&           weights,
+      const Vector&           state   );
 
   void                      checkCommit_
 
@@ -270,6 +276,7 @@ class CrystalViscoPlasticityModel : public Model
   Assignable<ElemGroup>      egroup_;
   Assignable<ElemSet>        elems_;
   Assignable<NodeSet>        nodes_;
+  Assignable<NodeGroup>      ipnodes_;
 
   int                        rank_;
 
@@ -279,6 +286,7 @@ class CrystalViscoPlasticityModel : public Model
   IdxVector                  dofTypes_;
   IdxVector                  dispTypes_;
   IdxVector                  slipTypes_;
+  IdxVector                  tauTypes_;
 
   Ref<HookeMaterial>         material_;
 
@@ -307,20 +315,5 @@ class CrystalViscoPlasticityModel : public Model
   vector<Vector>            Dsm_;  // sm_ \cdot E
   Matrix                    Esm_;  // sm_ \cdot E \cdot sm_
   Matrix                    D0_;   // Elastic matrix
-
-  // Store current and old step local tau
-
-  class                   Hist_
-  {
-    public:
-
-      Hist_( int n );
-
-      Vector              tau;       // tau
-  };
-
-  Flex<Hist_>             preHist_;
-  Flex<Hist_>             newHist_;
-  Flex<Hist_>*            latestHist_;
 
 };
