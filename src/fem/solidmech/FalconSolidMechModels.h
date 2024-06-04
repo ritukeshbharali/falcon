@@ -10,15 +10,16 @@
 
 void  declareFalconSolidMechModels       ();
 
-void  declareLinearElasticityModel       ();
-void  declarePhaseFractureModel          ();
-void  declarePhaseFractureExtModel       ();
-void  declarePhaseFractureExtItModel     ();
-void  declareMicroPhaseFractureModel     ();
-void  declareMicroPhaseFractureExtModel  ();
-void  declareMicroPhaseFractureExtItModel();
-void  declareGradientDamageModel         ();
-void  declareCrystalViscoPlasticityModel ();
+void  declareLinearElasticityModel          ();
+void  declarePhaseFractureModel             ();
+void  declarePhaseFractureExtModel          ();
+void  declarePhaseFractureExtItModel        ();
+void  declareMicroPhaseFractureModel        ();
+void  declareMicroPhaseFractureExtModel     ();
+void  declareMicroPhaseFractureExtItModel   ();
+void  declareGradientDamageModel            ();
+void  declareGradientCrystalPlasticityModel ();
+void  declareLocalCrystalPlasticityModel    ();
 
 #endif
 

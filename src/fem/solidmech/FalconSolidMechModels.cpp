@@ -9,13 +9,14 @@
 
 void declareFalconSolidMechModels      ()
 {
-  declareLinearElasticityModel         ();
-  declarePhaseFractureModel            ();
-  declarePhaseFractureExtModel         ();
-  declarePhaseFractureExtItModel       ();
-  declareMicroPhaseFractureModel       ();
-  declareMicroPhaseFractureExtModel    ();
-  declareMicroPhaseFractureExtItModel  ();
-  declareGradientDamageModel           ();
-  declareCrystalViscoPlasticityModel   ();
+  declareLinearElasticityModel          ();
+  declarePhaseFractureModel             ();
+  declarePhaseFractureExtModel          ();
+  declarePhaseFractureExtItModel        ();
+  declareMicroPhaseFractureModel        ();
+  declareMicroPhaseFractureExtModel     ();
+  declareMicroPhaseFractureExtItModel   ();
+  declareGradientDamageModel            ();
+  declareGradientCrystalPlasticityModel ();
+  declareLocalCrystalPlasticityModel    ();
 }
