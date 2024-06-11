@@ -6,6 +6,11 @@
  *  Date: 08 April 2024
  *
  *  Updates (when, what and who)
+ *     - [11 June 2024] tau (earlier a state variable) 
+ *       is now an independent dof defined on dummy 
+ *       integration point nodes. (RB)
+ *     - [11 June 2024] added functions to write stress,
+ *       strain, and tau nodal and element tables. (RB)
  * 
  *  TO-DO: Performance enhancements! Too many loops!
  *  Initialize variables together for better cache
@@ -104,17 +109,21 @@ typedef ElementGroup           ElemGroup;
  *  defined by the user at runtime.
  * 
  *  \note Weighted matching must be switched off if Pardiso solver is
- *   used.
+ *   used. Also, matrix.type must be set to "Sparse", instead of "FEM".
  * 
  *  Below is an example how a model with three slip system is defined:
  * 
  *  \code
+ *  matrix.type = "Sparse";
+ *  matrix.symmetric = false; 
+ * 
  *  models = ["bulk","cons","lodi"];
 
     bulk = "GradientCrystalPlasticity"
 
     {
       elements = "DomainElems";        // Element group
+      ipNodes  = "DomainIPNodes";      // (Dummy) Node group     
 
       shape =
       {
@@ -247,14 +256,31 @@ class GradientCrystalPlasticityModel : public Model
 
     ( XTable&                 table,
       const Vector&           weights,
-      const Vector&           state   );  
+      const Vector&           state   );
+
+  void                      getElemStress_
+
+    ( XTable&                 table,
+      const Vector&           weights,
+      const Vector&           state   );
 
   void                      getStrain_
 
     ( XTable&                 table,
       const Vector&           weights );
 
+  void                      getElemStrain_
+
+    ( XTable&                 table,
+      const Vector&           weights );
+
   void                      getTau_
+
+    ( XTable&                 table,
+      const Vector&           weights,
+      const Vector&           state   );
+
+  void                      getElemTau_
 
     ( XTable&                 table,
       const Vector&           weights,
@@ -295,6 +321,7 @@ class GradientCrystalPlasticityModel : public Model
   StringVector               slips_;
   int                        nslips_;
   double                     dtime_;
+  String                     ipNGroup_;
 
   Vector                     tstar_;
   Vector                     tauY_;

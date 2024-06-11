@@ -6,6 +6,11 @@
  *  Date: 08 April 2024
  *
  *  Updates (when, what and who)
+ *     - [11 June 2024] tau (earlier a state variable) 
+ *       is now an independent dof defined on dummy 
+ *       integration point nodes. (RB)
+ *     - [11 June 2024] added functions to write stress,
+ *       strain, and tau nodal and element tables. (RB)
  * 
  *  TO-DO: Performance enhancements! Too many loops!
  *  Initialize variables together for better cache
@@ -196,9 +201,11 @@ GradientCrystalPlasticityModel::GradientCrystalPlasticityModel
     dofTypes_[slice(0, rank_ + nslips_)]
   );
 
-  // Get integration point (dummy) nodes
+  // Get integration point (dummy) node group
 
-  ipnodes_  = NodeGroup::get ( IPNODES_PROP, nodes_, globdat, context );
+  myProps.get ( ipNGroup_, IPNODES_PROP );
+
+  ipnodes_  = NodeGroup::get ( ipNGroup_, nodes_, globdat, context );
 
   // Compute the total number of integration points.
 
@@ -212,15 +219,16 @@ GradientCrystalPlasticityModel::GradientCrystalPlasticityModel
     );
   }
 
+  myConf.set ( IPNODES_PROP, ipNGroup_ );
+
   dofs_->addDofs (
     ipnodes_.getIndices(),
     dofTypes_[slice(rank_ + nslips_, END)]
   );
 
   // Do we need to store strains? Or compute them on-the-fly?
-  // Store all tau
 
-  strain_.resize ( STRAIN_COUNTS[rank_] + nslips_, ipCount );
+  strain_.resize ( STRAIN_COUNTS[rank_], ipCount );
   strain_ = 0.0;
 
   // Create a material model object. Ensure it is a Hooke material 
@@ -351,9 +359,6 @@ void GradientCrystalPlasticityModel::configure
       Esm_(islip,jslip) = dot( Dsm_[islip], sm_[jslip] );
     }
   }
-
-  System::out() << "Esm: " << Esm_ << "\n";
-  System::out() << "D0 : " << D0_  << "\n";
 }
 
 
@@ -786,14 +791,6 @@ void GradientCrystalPlasticityModel::getMatrix_
 
       for ( int islip = 0; islip < nslips_; islip++ )
       {
-        /*Phi[islip]  = sign( tau[islip][ip] ) / tstar_[islip]
-                     * ( tau[islip][ip]  / 
-                              tauY_[islip] );
-
-        dPhi[islip] = sign( tau[islip][ip] ) / tstar_[islip]
-                        * ( 1.0  / 
-                                  tauY_[islip] );*/
-
         Phi[islip]  = sign( tau[islip][ip] ) / tstar_[islip]
                      * ::pow( fabs( tau[islip][ip] ) / 
                               tauY_[islip], n_[islip] );
@@ -802,11 +799,12 @@ void GradientCrystalPlasticityModel::getMatrix_
                         * n_[islip] / tauY_[islip]
                         * ::pow( fabs( tau[islip][ip] ) / 
                                   tauY_[islip], n_[islip] - 1.0 );
-        
-        /*System::out() << "ipoint: " << ipoint << "\n"
-                      << "tau: "    << tau[islip][ip] << "\n"
-                      << "Phi: "    << Phi[islip] << "\n"
-                      << "dPhi: "    << dPhi[islip] << "\n";*/
+
+        if ( fabs(dPhi[islip]) < 1.e-15 )
+        {
+          // Provide a dummy value
+          dPhi[islip] = 1.e-10;
+        }
       }
 
       // Compute weight of ip
@@ -859,11 +857,7 @@ void GradientCrystalPlasticityModel::getMatrix_
         // Tau row
 
         elemMat32[islip](ip,ALL) =  wip * (1.0/dtime_) * N (ALL, ip);
-        elemMat33[islip](ip,ip)  = -wip * dPhi[islip];
-
-        // System::out() << "tauDofs: " << tauDofs[islip] << "\n"; // Switch to Sparse matrix.type, not FEM
-        // Only when matrix.type is switched from FEM to Sparse, the following addBlokc works!
-        // Ask Erik Jan about this!
+        elemMat33[islip](ip,ip)  = -wip * (dPhi[islip]);
 
         if ( mbuilder != nullptr )
         {
@@ -1068,6 +1062,18 @@ bool GradientCrystalPlasticityModel::getTable_
     return true;
   }
 
+  // Element stresses
+  if ( name == "stress" && 
+       table->getRowItems() == elems_.getData() )
+  {
+    Vector  state;
+    StateVector::get ( state, dofs_, globdat  );
+
+    getElemStress_ ( *table, weights, state);
+
+    return true;
+  }
+
   // Nodal strains
   if ( name == "strain" && 
        table->getRowItems() == nodes_.getData() )
@@ -1077,7 +1083,16 @@ bool GradientCrystalPlasticityModel::getTable_
     return true;
   }
 
-  // Nodal strains
+  // Element strains
+  if ( name == "strain" && 
+       table->getRowItems() == elems_.getData() )
+  {
+    getElemStrain_ ( *table, weights);
+
+    return true;
+  }
+
+  // Nodal tau
   if ( name == "tau" && 
        table->getRowItems() == nodes_.getData() )
   {
@@ -1085,6 +1100,18 @@ bool GradientCrystalPlasticityModel::getTable_
     StateVector::get ( state, dofs_, globdat  );
 
     getTau_ ( *table, weights, state );
+
+    return true;
+  }
+
+  // Element tau
+  if ( name == "tau" && 
+       table->getRowItems() == elems_.getData() )
+  {
+    Vector  state;
+    StateVector::get ( state, dofs_, globdat  );
+
+    getElemTau_ ( *table, weights, state );
 
     return true;
   }
@@ -1262,6 +1289,155 @@ void GradientCrystalPlasticityModel::getStress_
 
 
 //-----------------------------------------------------------------------
+//   getElemStress_
+//-----------------------------------------------------------------------
+
+
+void GradientCrystalPlasticityModel::getElemStress_
+
+  ( XTable&        table,
+    const Vector&  weights,
+    const Vector&  state )
+
+{
+  IdxVector  ielems     = egroup_.getIndices  ();
+
+  Matrix     sfuncs     = shape_->getShapeFunctions ();
+
+  const int  elemCount  = ielems.size         ();
+  const int  nodeCount  = shape_->nodeCount   ();
+  const int  ipCount    = shape_->ipointCount ();
+  const int  strCount   = STRAIN_COUNTS[rank_];
+
+  Matrix     elStress   ( elemCount, strCount );
+
+  Matrix     stiff      ( strCount, strCount );
+  Vector     stressIp   ( strCount );
+  vector<Vector> slip   ( nslips_ );
+
+  IdxVector  inodes     ( nodeCount );
+  IdxVector  jcols      ( strCount  );
+
+  vector<IdxVector> slipDofs ( nslips_ );
+
+  for ( int islip = 0; islip < nslips_; islip++ )
+  {
+    slip[islip]     .resize( nodeCount );
+    slipDofs[islip] .resize( nodeCount );
+  }
+
+  MChain1    mc1;
+
+  // Add the columns for the stress components to the table.
+
+  switch ( strCount )
+  {
+  case 1:
+
+    jcols[0] = table.addColumn ( "stress_xx" );
+
+    break;
+
+  case 3:
+
+    jcols[0] = table.addColumn ( "stress_xx" );
+    jcols[1] = table.addColumn ( "stress_yy" );
+    jcols[2] = table.addColumn ( "stress_xy" );
+
+    break;
+
+  case 4:
+
+    jcols[0] = table.addColumn ( "stress_xx" );
+    jcols[1] = table.addColumn ( "stress_yy" );
+    jcols[2] = table.addColumn ( "stress_zz" );
+    jcols[3] = table.addColumn ( "stress_xy" );
+
+    break;  
+
+  case 6:
+
+    jcols[0] = table.addColumn ( "stress_xx" );
+    jcols[1] = table.addColumn ( "stress_yy" );
+    jcols[2] = table.addColumn ( "stress_zz" );
+    jcols[3] = table.addColumn ( "stress_xy" );
+    jcols[4] = table.addColumn ( "stress_yz" );
+    jcols[5] = table.addColumn ( "stress_xz" );
+
+    break;
+
+  default:
+
+    throw Error (
+      JEM_FUNC,
+      "unexpected number of stress components: " +
+      String ( strCount )
+    );
+  }
+
+  elStress  = 0.0;
+
+  // Iterate over all elements assigned to this model.
+
+  for ( int ie = 0; ie < elemCount; ie++ )
+  {
+    elems_.getElemNodes ( inodes, ielems[ie] );
+
+    for ( int islip = 0; islip < nslips_; islip++ )
+    {
+      dofs_->getDofIndices ( slipDofs[islip], inodes, 
+                                  slipTypes_[islip] );
+
+      slip[islip]   = select ( state, slipDofs[islip] );
+    }
+
+    // Get the shape function
+
+    Matrix N  = shape_->getShapeFunctions ();
+
+    // Iterate over the integration points.
+
+    for ( int ip = 0; ip < ipCount; ip++ )
+    {
+      // Get the corresponding material point ipoint
+      // of element ielem integration point ip from the mapping
+
+      int ipoint = ipMpMap_ ( ielems[ie], ip );
+
+      // Extrapolate the integration point stresses to the nodes using
+      // the transposed shape functions.
+
+      material_->update ( stressIp, stiff, strain_(ALL,ipoint), 0  );
+
+      // Compute integration point slips
+
+      const Vector Nip    = N ( ALL, ip );
+
+      for ( int islip = 0; islip < nslips_; islip++ )
+      {
+        // Get integration point slip
+
+        double ipSlip = dot ( Nip, slip[islip] );
+
+        // Update the stress
+
+        stressIp -= ipSlip * Dsm_[islip];
+      }
+
+      for ( int jj = 0; jj < strCount; jj++ )
+      {
+        elStress(ie,jj)  += stressIp[jj]/ipCount;
+      }
+    }
+
+    // Add the stresses to the table.
+
+    table.addBlock ( ielems, jcols, elStress );
+  }
+}
+
+
+//-----------------------------------------------------------------------
 //   getStrain_
 //-----------------------------------------------------------------------
 
@@ -1381,6 +1557,97 @@ void GradientCrystalPlasticityModel::getStrain_
 
 
 //-----------------------------------------------------------------------
+//   getElemStrain_
+//-----------------------------------------------------------------------
+
+
+void GradientCrystalPlasticityModel::getElemStrain_
+
+  ( XTable&        table,
+    const Vector&  weights )
+
+{
+  IdxVector  ielems     = egroup_.getIndices  ();
+
+  const int  ielemCount  = ielems.size         ();
+  const int  ipCount     = shape_->ipointCount ();
+  const int  strCount    = STRAIN_COUNTS[rank_];
+
+  Matrix     elStrain   ( ielemCount , strCount );
+  IdxVector  jcols      ( strCount   );
+
+  // Add the columns for the normal strain components to the table.
+
+  switch ( strCount )
+  {
+  case 1:
+
+    jcols[0] = table.addColumn ( "e_xx" );
+
+    break;
+
+  case 3:
+
+    jcols[0] = table.addColumn ( "e_xx" );
+    jcols[1] = table.addColumn ( "e_yy" );
+    jcols[2] = table.addColumn ( "e_xy" );
+
+    break;
+
+  case 4:
+
+    jcols[0] = table.addColumn ( "e_xx" );
+    jcols[1] = table.addColumn ( "e_yy" );
+    jcols[2] = table.addColumn ( "e_zz" );
+    jcols[3] = table.addColumn ( "e_xy" );
+
+    break;  
+
+  case 6:
+
+    jcols[0] = table.addColumn ( "e_xx" );
+    jcols[1] = table.addColumn ( "e_yy" );
+    jcols[2] = table.addColumn ( "e_zz" );
+    jcols[3] = table.addColumn ( "e_xy" );
+    jcols[4] = table.addColumn ( "e_yz" );
+    jcols[5] = table.addColumn ( "e_xz" );
+
+    break;
+
+  default:
+
+    throw Error (
+      JEM_FUNC,
+      "unexpected number of strain components: " +
+      String ( strCount )
+    );
+  }
+
+  elStrain      = 0.0;
+  
+  for ( int ie = 0; ie < ielemCount; ie++ )
+  {
+    for ( int ip = 0; ip < ipCount; ip++ )
+    {
+      // Store Ip averaged strain in elStrain
+
+      int ipoint = ipMpMap_( ielems[ie], ip );
+
+      for ( int jj = 0; jj < strCount; jj++ )
+      {
+        elStrain(ie,jj)  += strain_(jj,ipoint)/ipCount;
+      }
+    }
+  }
+
+  // Add the stresses to the table.
+
+  table.addBlock ( ielems, jcols, elStrain );
+
+}
+
+
+//-----------------------------------------------------------------------
 //   getTau_
 //-----------------------------------------------------------------------
 
@@ -1463,6 +1730,89 @@ void GradientCrystalPlasticityModel::getTau_
     // Add the strains to the table.
 
     table.addBlock ( inodes, jcols, ndTau );
+  }
+}
+
+
+//-----------------------------------------------------------------------
+//   getElemTau_
+//-----------------------------------------------------------------------
+
+
+void GradientCrystalPlasticityModel::getElemTau_
+
+  ( XTable&        table,
+    const Vector&  weights,
+    const Vector&  state )
+
+{
+  // Get the elements associated with this model
+  IdxVector  ielems     = egroup_.getIndices  ();
+
+  // Get the integration point nodes for this model
+  IdxVector   ipnodes    = ipnodes_.getIndices ();
+
+  Matrix     sfuncs     = shape_->getShapeFunctions ();
+
+  const int  elemCount  = ielems.size         ();
+  const int  ipCount    = shape_->ipointCount ();
+
+  Matrix     elTau      ( elemCount, nslips_ );
+
+  vector<Vector> tau    ( nslips_ );
+
+  IdxVector  ielem      ( elemCount );
+  IdxVector  jcols      ( nslips_   );
+
+  vector<IdxVector> tauDofs ( nslips_ );
+
+  for ( int islip = 0; islip < nslips_; islip++ )
+  {
+    tau[islip]     .resize( ipCount );
+    tauDofs[islip] .resize( ipCount );
+
+    String tauName = "tau" + String(islip);
+    jcols[islip]   = table.addColumn ( tauName );
+
+  }
+
+  MChain1    mc1;
+
+  elTau = 0.0;
+  ielem = 0;
+
+  // Iterate over all elements assigned to this model.
+
+  for ( int ie = 0; ie < elemCount; ie++ )
+  {
+    // Iterate over the integration points.
+
+    for ( int ip = 0; ip < ipCount; ip++ )
+    {
+      // Get the corresponding material point ipoint
+      // of element ielem integration point ip from the mapping
+
+      int ipoint = ipMpMap_ ( ielems[ie], ip );
+
+      // Compute integration point taus
+
+      for ( int islip = 0; islip < nslips_; islip++ )
+      {
+        tauDofs[islip][ip] = dofs_-> getDofIndex ( 
+                  ipnodes[ipoint], tauTypes_[islip] );
+
+        tau[islip]  = select ( state, tauDofs[islip] );
+      }
+
+      for ( int jj = 0; jj < nslips_; jj++ )
+      {
+        elTau(ie,jj)  += tau[jj][ip]/ipCount;
+      }
+    }
+
+    // Add the stresses to the table.
+
+    table.addBlock ( ielems, jcols, elTau );
   }
 }
 
