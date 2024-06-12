@@ -795,7 +795,7 @@ void GradientCrystalPlasticityModel::getMatrix_
                      * ::pow( fabs( tau[islip][ip] ) / 
                               tauY_[islip], n_[islip] );
 
-        dPhi[islip] = sign( tau[islip][ip] ) / tstar_[islip]
+        dPhi[islip] = 1.0 / tstar_[islip]
                         * n_[islip] / tauY_[islip]
                         * ::pow( fabs( tau[islip][ip] ) / 
                                   tauY_[islip], n_[islip] - 1.0 );
@@ -824,8 +824,8 @@ void GradientCrystalPlasticityModel::getMatrix_
                                             + tau[islip][ip] ) + 
                                     1.e+3 * mc1.matmul (bet, gradSlip[islip]) );
 
-        elemForce3[islip]  = wip * ( ( ipSlip[islip] - ipSlip0[islip] ) / dtime_
-                                   - Phi[islip]  
+        elemForce3[islip]  = wip * ( ( ipSlip[islip] - ipSlip0[islip] )
+                                   - dtime_ * Phi[islip]  
                                    );
 
         select ( force, tauDofs[islip] ) = elemForce3[islip];
@@ -856,13 +856,13 @@ void GradientCrystalPlasticityModel::getMatrix_
 
         // Tau row
 
-        elemMat32[islip](ip,ALL) =  wip * (1.0/dtime_) * N (ALL, ip);
-        elemMat33[islip](ip,ip)  = -wip * (dPhi[islip]);
+        elemMat32[islip](ip,ALL) =  wip * N (ALL, ip);
+        elemMat33[islip](ip,ip)  = -wip * dtime_ * dPhi[islip];
 
         if ( mbuilder != nullptr )
         {
-          mbuilder -> addBlock ( tauDofs[islip], slipDofs[islip], elemMat32[islip] );
-          mbuilder -> addBlock ( tauDofs[islip], tauDofs[islip],  elemMat33[islip] );
+          mbuilder -> setBlock ( tauDofs[islip], slipDofs[islip], elemMat32[islip] );
+          mbuilder -> setBlock ( tauDofs[islip], tauDofs[islip],  elemMat33[islip] );
         }
       }
 
