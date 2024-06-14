@@ -12,9 +12,7 @@
  *     - [11 June 2024] added functions to write stress,
  *       strain, and tau nodal and element tables. (RB)
  * 
- *  TO-DO: Performance enhancements! Too many loops!
- *  Initialize variables together for better cache
- *  utilization!
+ *  @todo Simplify some data structures, reduce loops.
  *
  */
 
@@ -103,13 +101,14 @@ typedef ElementGroup           ElemGroup;
  * 
  *  The class \c GradientCrystalPlasticityModel implements a crystal
  *  visco-plasticity finite element model with gradient-based 
- *  regularization of the slip(s). The displacements (2D, 3D), slip(s),
- *  and the Schmid stress(es) are considered as nodal degrees of
- *  freedom. The model allows an arbitrary number of slip planes,
- *  defined by the user at runtime.
+ *  regularization of the slip(s). The displacements (2D, 3D) and the
+ *  slip(s) are nodal degrees of freedom. The Schmid stress(es) are 
+ *  defined on a dummy nodegroup 'ipNodes'. The model allows an 
+ *  arbitrary number of slip planes, defined by the user at runtime.
  * 
- *  \note Weighted matching must be switched off if Pardiso solver is
- *   used. Also, matrix.type must be set to "Sparse", instead of "FEM".
+ *  \note The number of nodes in the dummy 'ipNodes' nodegroup must match
+ *  the total number of integration points in the model. Also, matrix.type
+ *  must be set to "Sparse", instead of "FEM".
  * 
  *  Below is an example how a model with three slip system is defined:
  * 
