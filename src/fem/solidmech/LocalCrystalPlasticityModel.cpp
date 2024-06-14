@@ -6,6 +6,8 @@
  *  Date: 08 April 2024
  *
  *  Updates (when, what and who)
+ *     - [14 June 2024] added functions to write stress,
+ *       strain, and slip nodal and element tables. (RB)
  * 
  *  @todo Simplify some data structures, reduce loops.
  */
@@ -185,7 +187,9 @@ LocalCrystalPlasticityModel::LocalCrystalPlasticityModel
 
   // Get integration point (dummy) nodes
 
-  ipnodes_  = NodeGroup::get ( IPNODES_PROP, nodes_, globdat, context );
+  myProps.get ( ipNGroup_, IPNODES_PROP );
+
+  ipnodes_  = NodeGroup::get ( ipNGroup_, nodes_, globdat, context );
 
   // Compute the total number of integration points.
 
@@ -199,6 +203,8 @@ LocalCrystalPlasticityModel::LocalCrystalPlasticityModel
     );
   }
 
+  myConf.set ( IPNODES_PROP, ipNGroup_ );
+
   dofs_->addDofs (
     ipnodes_.getIndices(),
     dofTypes_[slice(rank_, END)]
@@ -207,7 +213,7 @@ LocalCrystalPlasticityModel::LocalCrystalPlasticityModel
   // Do we need to store strains? Or compute them on-the-fly?
   // Store all tau
 
-  strain_.resize ( STRAIN_COUNTS[rank_] + nslips_, ipCount );
+  strain_.resize ( STRAIN_COUNTS[rank_], ipCount );
   strain_ = 0.0;
 
   // Create a material model object. Ensure it is a Hooke material 
@@ -599,7 +605,7 @@ void LocalCrystalPlasticityModel::getMatrix_
   {
     // Get the global element index.
 
-    int  ielem = ielems[ie];
+    const int  ielem = ielems[ie];
 
     // Get the element coordinates and DOFs.
 
@@ -646,7 +652,7 @@ void LocalCrystalPlasticityModel::getMatrix_
       // Get the corresponding material point ipoint
       // of element ielem integration point ip from the mapping
 
-      int ipoint = ipMpMap_ ( ielem, ip );
+      const int ipoint = ipMpMap_ ( ielem, ip );
 
       // We use this information later, ipnodes[ipoint] is the
       // dummy integration point node, where tau is defined.
@@ -698,10 +704,16 @@ void LocalCrystalPlasticityModel::getMatrix_
                      * ::pow( fabs( tau[islip] ) / 
                               tauY_[islip], n_[islip] );
 
-        dPhi[islip] = sign( tau[islip] ) / tstar_[islip]
+        dPhi[islip] = 1.0 / tstar_[islip]
                         * n_[islip] / tauY_[islip]
                         * ::pow( fabs( tau[islip] ) / 
                                   tauY_[islip], n_[islip] - 1.0 );
+
+        if ( fabs(dPhi[islip]) < 1.e-15 )
+        {
+          // Provide a dummy value
+          dPhi[islip] = 1.e-10;
+        }
       }
 
       // Compute weight of ip
@@ -746,8 +758,8 @@ void LocalCrystalPlasticityModel::getMatrix_
 
         if ( mbuilder != nullptr )
         {
-          mbuilder -> addBlock ( slipDofs[islip], dispDofs,         elemMat21[islip] );
-          mbuilder -> addBlock ( slipDofs[islip], slipDofs[islip],  elemMat22[islip] );
+          mbuilder -> setBlock ( slipDofs[islip], dispDofs,         elemMat21[islip] );
+          mbuilder -> setBlock ( slipDofs[islip], slipDofs[islip],  elemMat22[islip] );
         }
       }
 
@@ -766,11 +778,6 @@ void LocalCrystalPlasticityModel::getMatrix_
     }
 
     select ( force, dispDofs ) += elemForce1;
-
-    for ( int islip = 0; islip < nslips_; islip++ )
-    {
-      select ( force, slipDofs[islip] ) += elemForce2[islip];
-    }
   }
 }
 
@@ -943,6 +950,18 @@ bool LocalCrystalPlasticityModel::getTable_
     return true;
   }
 
+  // Element stresses
+  if ( name == "stress" && 
+       table->getRowItems() == elems_.getData() )
+  {
+    Vector  state;
+    StateVector::get ( state,     dofs_, globdat  );
+
+    getElemStress_ ( *table, weights, state);
+
+    return true;
+  }
+
   // Nodal strains
   if ( name == "strain" && 
        table->getRowItems() == nodes_.getData() )
@@ -952,14 +971,35 @@ bool LocalCrystalPlasticityModel::getTable_
     return true;
   }
 
+  // Element strains
+  if ( name == "strain" && 
+       table->getRowItems() == nodes_.getData() )
+  {
+    getElemStrain_ ( *table, weights);
+
+    return true;
+  }
+
   // Nodal strains
   if ( name == "slip" && 
        table->getRowItems() == nodes_.getData() )
   {
     Vector  state;
-    StateVector::get ( state,     dofs_, globdat  );
+    StateVector::get ( state, dofs_, globdat  );
 
     getSlip_ ( *table, weights, state);
+
+    return true;
+  }
+
+  // Nodal strains
+  if ( name == "slip" && 
+       table->getRowItems() == elems_.getData() )
+  {
+    Vector  state;
+    StateVector::get ( state, dofs_, globdat  );
+
+    getElemSlip_ ( *table, weights, state);
 
     return true;
   }
@@ -998,12 +1038,14 @@ void LocalCrystalPlasticityModel::getStress_
   IdxVector  ielems     = egroup_ .getIndices  ();
   IdxVector  ipnodes    = ipnodes_.getIndices  ();
 
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
-
   const int  ielemCount  = ielems.size         ();
   const int  nodeCount   = shape_->nodeCount   ();
   const int  ipCount     = shape_->ipointCount ();
   const int  strCount    = STRAIN_COUNTS[rank_];
+
+  // Get the shape function
+
+  Matrix N  = shape_->getShapeFunctions ();
 
   Matrix     ndStress   ( nodeCount, strCount );
   Vector     ndWeights  ( nodeCount );
@@ -1076,13 +1118,9 @@ void LocalCrystalPlasticityModel::getStress_
 
   for ( int ie = 0; ie < ielemCount; ie++ )
   {
-    int  ielem = ielems[ie];
+    const int  ielem = ielems[ie];
 
     elems_.getElemNodes ( inodes, ielem );
-
-    // Get the shape function
-
-    Matrix N  = shape_->getShapeFunctions ();
 
     // Iterate over the integration points.
 
@@ -1094,7 +1132,7 @@ void LocalCrystalPlasticityModel::getStress_
       // Get the corresponding material point ipoint
       // of element ielem integration point ip from the mapping
 
-      int ipoint = ipMpMap_ ( ielem, ip );
+      const int ipoint = ipMpMap_ ( ielem, ip );
 
       // Extrapolate the integration point stresses to the nodes using
       // the transposed shape functions.
@@ -1113,8 +1151,8 @@ void LocalCrystalPlasticityModel::getStress_
         stressIp -= slip[islip][ip] * Dsm_[islip];
       }
 
-      ndStress  += matmul ( sfuncs(ALL,ip), stressIp );
-      ndWeights += sfuncs(ALL,ip);
+      ndStress  += matmul ( N(ALL,ip), stressIp );
+      ndWeights += N(ALL,ip);
     }
 
     select ( weights, inodes ) += ndWeights;
@@ -1123,6 +1161,142 @@ void LocalCrystalPlasticityModel::getStress_
 
     table.addBlock ( inodes, jcols, ndStress );
   }
+}
+
+
+//-----------------------------------------------------------------------
+//   getElemStress_
+//-----------------------------------------------------------------------
+
+
+void LocalCrystalPlasticityModel::getElemStress_
+
+  ( XTable&        table,
+    const Vector&  weights,
+    const Vector&  state )
+
+{
+  IdxVector  ielems     = egroup_ .getIndices  ();
+  IdxVector  ipnodes    = ipnodes_.getIndices  ();
+
+  const int  elemCount   = ielems.size         ();
+  const int  nodeCount   = shape_->nodeCount   ();
+  const int  ipCount     = shape_->ipointCount ();
+  const int  strCount    = STRAIN_COUNTS[rank_];
+
+  // Get the shape function
+
+  Matrix N  = shape_->getShapeFunctions ();
+
+  Matrix     elStress   ( elemCount, strCount );
+
+  Matrix     stiff      ( strCount, strCount );
+  Vector     stressIp   ( strCount );
+  vector<Vector> slip   ( nslips_ );
+
+  IdxVector  inodes     ( nodeCount );
+  IdxVector  jcols      ( strCount  );
+
+  vector<IdxVector> slipDofs ( nslips_ );
+
+  for ( int islip = 0; islip < nslips_; islip++ )
+  {
+    slip[islip]     .resize( ipCount );
+    slipDofs[islip] .resize( ipCount );
+  }
+
+  MChain1    mc1;
+
+  // Add the columns for the stress components to the table.
+
+  switch ( strCount )
+  {
+  case 1:
+
+    jcols[0] = table.addColumn ( "stress_xx" );
+
+    break;
+
+  case 3:
+
+    jcols[0] = table.addColumn ( "stress_xx" );
+    jcols[1] = table.addColumn ( "stress_yy" );
+    jcols[2] = table.addColumn ( "stress_xy" );
+
+    break;
+
+  case 4:
+
+    jcols[0] = table.addColumn ( "stress_xx" );
+    jcols[1] = table.addColumn ( "stress_yy" );
+    jcols[2] = table.addColumn ( "stress_zz" );
+    jcols[3] = table.addColumn ( "stress_xy" );
+
+    break;  
+
+  case 6:
+
+    jcols[0] = table.addColumn ( "stress_xx" );
+    jcols[1] = table.addColumn ( "stress_yy" );
+    jcols[2] = table.addColumn ( "stress_zz" );
+    jcols[3] = table.addColumn ( "stress_xy" );
+    jcols[4] = table.addColumn ( "stress_yz" );
+    jcols[5] = table.addColumn ( "stress_xz" );
+
+    break;
+
+  default:
+
+    throw Error (
+      JEM_FUNC,
+      "unexpected number of stress components: " +
+      String ( strCount )
+    );
+  }
+
+  elStress = 0.0;
+
+  // Iterate over all elements assigned to this model.
+
+  for ( int ie = 0; ie < elemCount; ie++ )
+  {
+    const int  ielem = ielems[ie];
+
+    elems_.getElemNodes ( inodes, ielem );
+
+    // Iterate over the integration points.
+
+    for ( int ip = 0; ip < ipCount; ip++ )
+    {
+      // Get the corresponding material point ipoint
+      // of element ielem integration point ip from the mapping
+
+      const int ipoint = ipMpMap_ ( ielem, ip );
+
+      // Extrapolate the integration point stresses to the nodes using
+      // the transposed shape functions.
+
+      material_->update ( stressIp, stiff, strain_(ALL,ipoint), 0  );
+
+      for ( int islip = 0; islip < nslips_; islip++ )
+      {
+        slipDofs[islip][ip] = dofs_-> getDofIndex ( 
+                  ipnodes[ipoint], slipTypes_[islip] );
+
+        slip[islip]   = select ( state,  slipDofs[islip] );
+
+        // Update stress
+
+        stressIp -= slip[islip][ip] * Dsm_[islip];
+      }
+
+      elStress(ie,ALL) += stressIp/ipCount;
+    }
+  }
+
+  // Add the stresses to the table.
+
+  table.addBlock ( ielems, jcols, elStress );
 }
 
 
@@ -1144,7 +1318,7 @@ void LocalCrystalPlasticityModel::getStrain_
   const int  ipCount    = shape_->ipointCount ();
   const int  strCount   = STRAIN_COUNTS[rank_];
 
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
+  Matrix     N          = shape_->getShapeFunctions ();
 
   Matrix     ndStrain   ( nodeCount, strCount );
   Vector     ndWeights  ( nodeCount );
@@ -1205,7 +1379,7 @@ void LocalCrystalPlasticityModel::getStrain_
   {
     // Get the global element index.
 
-    int  ielem = ielems[ie];
+    const int  ielem = ielems[ie];
 
     // Get the element nodes.
 
@@ -1221,13 +1395,13 @@ void LocalCrystalPlasticityModel::getStrain_
       // Get the corresponding material point ipoint
       // of element ielem integration point ip from the mapping
 
-      int ipoint = ipMpMap_ ( ielem, ip );
+      const int ipoint = ipMpMap_ ( ielem, ip );
 
       // Extrapolate the integration point strains to the nodes using
       // the transposed shape functions.
 
-      ndStrain  += matmul ( sfuncs(ALL,ip), strain_(slice(BEGIN,strCount),ipoint) );
-      ndWeights += sfuncs(ALL,ip);
+      ndStrain  += matmul ( N(ALL,ip), strain_(slice(BEGIN,strCount),ipoint) );
+      ndWeights += N(ALL,ip);
     }
 
     // Increment the table weights. When the complete table has been
@@ -1246,6 +1420,111 @@ void LocalCrystalPlasticityModel::getStrain_
 
 
 //-----------------------------------------------------------------------
+//   getElemStrain_
+//-----------------------------------------------------------------------
+
+
+void LocalCrystalPlasticityModel::getElemStrain_
+
+  ( XTable&        table,
+    const Vector&  weights )
+
+{
+  IdxVector  ielems     = egroup_.getIndices  ();
+
+  const int  elemCount  = ielems.size         ();
+  const int  nodeCount  = shape_->nodeCount   ();
+  const int  ipCount    = shape_->ipointCount ();
+  const int  strCount   = STRAIN_COUNTS[rank_];
+
+  Matrix     elStrain   ( elemCount, strCount );
+
+  IdxVector  inodes     ( nodeCount );
+  IdxVector  jcols      ( strCount  );
+
+  // Add the columns for the normal strain components to the table.
+
+  switch ( strCount )
+  {
+  case 1:
+
+    jcols[0] = table.addColumn ( "e_xx" );
+
+    break;
+
+  case 3:
+
+    jcols[0] = table.addColumn ( "e_xx" );
+    jcols[1] = table.addColumn ( "e_yy" );
+    jcols[2] = table.addColumn ( "e_xy" );
+
+    break;
+
+  case 4:
+
+    jcols[0] = table.addColumn ( "e_xx" );
+    jcols[1] = table.addColumn ( "e_yy" );
+    jcols[2] = table.addColumn ( "e_zz" );
+    jcols[3] = table.addColumn ( "e_xy" );
+
+    break;  
+
+  case 6:
+
+    jcols[0] = table.addColumn ( "e_xx" );
+    jcols[1] = table.addColumn ( "e_yy" );
+    jcols[2] = table.addColumn ( "e_zz" );
+    jcols[3] = table.addColumn ( "e_xy" );
+    jcols[4] = table.addColumn ( "e_yz" );
+    jcols[5] = table.addColumn ( "e_xz" );
+
+    break;
+
+  default:
+
+    throw Error (
+      JEM_FUNC,
+      "unexpected number of strain components: " +
+      String ( strCount )
+    );
+  }
+
+  elStrain = 0.0;
+
+  // Iterate over all elements assigned to this model.
+
+  for ( int ie = 0; ie < elemCount; ie++ )
+  {
+    // Get the global element index.
+
+    const int  ielem = ielems[ie];
+
+    // Get the element nodes.
+
+    elems_.getElemNodes ( inodes, ielem );
+
+    // Iterate over the integration points.
+
+    for ( int ip = 0; ip < ipCount; ip++ )
+    {
+      // Get the corresponding material point ipoint
+      // of element ielem integration point ip from the mapping
+
+      const int ipoint = ipMpMap_ ( ielem, ip );
+
+      // Compute integration point-averaged strains
+
+      elStrain(ie,ALL) += strain_(slice(BEGIN,strCount),ipoint)/ipCount;
+    }
+  }
+
+  // Add the strains to the table.
+
+  table.addBlock ( ielems, jcols, elStrain );
+}
+
+
+//-----------------------------------------------------------------------
 //   getSlip_
 //-----------------------------------------------------------------------
 
@@ -1260,11 +1539,11 @@ void LocalCrystalPlasticityModel::getSlip_
   IdxVector  ielems     = egroup_ .getIndices  ();
   IdxVector  ipnodes    = ipnodes_.getIndices  ();
 
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
-
-  const int  ielemCount = ielems.size         ();
+  const int  elemCount  = ielems.size         ();
   const int  nodeCount  = shape_->nodeCount   ();
   const int  ipCount    = shape_->ipointCount ();
+
+  Matrix     N          = shape_->getShapeFunctions ();
 
   Matrix     ndSlip     ( nodeCount, nslips_ );
   Vector     ndWeights  ( nodeCount );
@@ -1282,11 +1561,11 @@ void LocalCrystalPlasticityModel::getSlip_
 
   // Iterate over all elements assigned to this model.
 
-  for ( int ie = 0; ie < ielemCount; ie++ )
+  for ( int ie = 0; ie < elemCount; ie++ )
   {
     // Get the global element index.
 
-    int  ielem = ielems[ie];
+    const int  ielem = ielems[ie];
 
     // Get the element nodes.
 
@@ -1313,8 +1592,8 @@ void LocalCrystalPlasticityModel::getSlip_
       // Extrapolate the integration point taus to the nodes using
       // the transposed shape functions.
 
-      ndSlip    += matmul ( sfuncs(ALL,ip), slip );
-      ndWeights += sfuncs(ALL,ip);
+      ndSlip    += matmul ( N(ALL,ip), slip );
+      ndWeights += N(ALL,ip);
     }
 
     // Increment the table weights. When the complete table has been
@@ -1329,6 +1608,80 @@ void LocalCrystalPlasticityModel::getSlip_
 
     table.addBlock ( inodes, jcols, ndSlip);
   }
+}
+
+
+//-----------------------------------------------------------------------
+//   getElemSlip_
+//-----------------------------------------------------------------------
+
+
+void LocalCrystalPlasticityModel::getElemSlip_
+
+  ( XTable&        table,
+    const Vector&  weights,
+    const Vector&  state )
+
+{
+  IdxVector  ielems     = egroup_ .getIndices  ();
+  IdxVector  ipnodes    = ipnodes_.getIndices  ();
+
+  const int  elemCount  = ielems.size         ();
+  const int  nodeCount  = shape_->nodeCount   ();
+  const int  ipCount    = shape_->ipointCount ();
+
+  Matrix     elSlip     ( elemCount, nslips_ );
+  Vector     ndWeights  ( nodeCount );
+
+  IdxVector  inodes     ( nodeCount );
+  IdxVector  jcols      ( nslips_   );
+
+  // Add the columns to the table.
+
+  for ( int islip = 0; islip < nslips_; islip++ )
+  {
+    String slipName = "slip" + String(islip);
+    jcols[islip]   = table.addColumn ( slipName );
+  }
+
+  elSlip = 0.0;
+
+  // Iterate over all elements assigned to this model.
+
+  for ( int ie = 0; ie < elemCount; ie++ )
+  {
+    // Get the global element index.
+
+    const int  ielem = ielems[ie];
+
+    // Get the element nodes.
+
+    elems_.getElemNodes ( inodes, ielem );
+
+    // Iterate over the integration points.
+
+    IdxVector slipDofs ( nslips_ );
+    Vector    slip     ( nslips_ );
+
+    for ( int ip = 0; ip < ipCount; ip++ )
+    {
+      // Get the corresponding material point ipoint
+      // of element ielem integration point ip from the mapping
+
+      const int ipoint = ipMpMap_ ( ielem, ip );
+      
+      dofs_     -> getDofIndices ( slipDofs, ipnodes[ipoint], slipTypes_ );
+      slip       = state[slipDofs];
+
+      // Compute integration point-averaged slip
+
+      elSlip(ie,ALL) +=  slip/ipCount;
+    }
+  }
+
+  // Add the strains to the table.
+
+  table.addBlock ( ielems, jcols, elSlip);
 }
 
 
