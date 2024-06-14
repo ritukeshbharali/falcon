@@ -1149,12 +1149,14 @@ void GradientCrystalPlasticityModel::getStress_
 {
   IdxVector  ielems     = egroup_.getIndices  ();
 
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
-
   const int  ielemCount  = ielems.size         ();
   const int  nodeCount   = shape_->nodeCount   ();
   const int  ipCount     = shape_->ipointCount ();
   const int  strCount    = STRAIN_COUNTS[rank_];
+
+  // Get the shape function
+
+  Matrix N  = shape_->getShapeFunctions ();
 
   Matrix     ndStress   ( nodeCount, strCount );
   Vector     ndWeights  ( nodeCount );
@@ -1221,13 +1223,13 @@ void GradientCrystalPlasticityModel::getStress_
       "unexpected number of stress components: " +
       String ( strCount )
     );
-  }
+  }  
 
   // Iterate over all elements assigned to this model.
 
   for ( int ie = 0; ie < ielemCount; ie++ )
   {
-    int  ielem = ielems[ie];
+    const int  ielem = ielems[ie];
 
     elems_.getElemNodes ( inodes, ielem );
 
@@ -1239,12 +1241,8 @@ void GradientCrystalPlasticityModel::getStress_
       slip[islip]   = select ( state, slipDofs[islip] );
     }
 
-    // Get the shape function
-
-    Matrix N  = shape_->getShapeFunctions ();
-
     // Iterate over the integration points.
-
+    
     ndStress  = 0.0;
     ndWeights = 0.0;
 
@@ -1275,8 +1273,8 @@ void GradientCrystalPlasticityModel::getStress_
         stressIp -= ipSlip * Dsm_[islip];
       }
 
-      ndStress  += matmul ( sfuncs(ALL,ip), stressIp );
-      ndWeights += sfuncs(ALL,ip);
+      ndStress  += matmul ( Nip, stressIp );
+      ndWeights += Nip;
     }
 
     select ( weights, inodes ) += ndWeights;
@@ -1302,12 +1300,14 @@ void GradientCrystalPlasticityModel::getElemStress_
 {
   IdxVector  ielems     = egroup_.getIndices  ();
 
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
-
   const int  elemCount  = ielems.size         ();
   const int  nodeCount  = shape_->nodeCount   ();
   const int  ipCount    = shape_->ipointCount ();
   const int  strCount   = STRAIN_COUNTS[rank_];
+
+  // Get the shape function
+
+  Matrix N  = shape_->getShapeFunctions ();
 
   Matrix     elStress   ( elemCount, strCount );
 
@@ -1381,7 +1381,9 @@ void GradientCrystalPlasticityModel::getElemStress_
 
   for ( int ie = 0; ie < elemCount; ie++ )
   {
-    elems_.getElemNodes ( inodes, ielems[ie] );
+    const int ielem = ielems[ie];
+
+    elems_.getElemNodes ( inodes, ielem );
 
     for ( int islip = 0; islip < nslips_; islip++ )
     {
@@ -1389,11 +1391,7 @@ void GradientCrystalPlasticityModel::getElemStress_
                                   slipTypes_[islip] );
 
       slip[islip]   = select ( state, slipDofs[islip] );
-    }
-
-    // Get the shape function
-
-    Matrix N  = shape_->getShapeFunctions ();
+    }    
 
     // Iterate over the integration points.
 
@@ -1429,11 +1427,11 @@ void GradientCrystalPlasticityModel::getElemStress_
         elStress(ie,jj)  += stressIp[jj]/ipCount;
       }
     }
-
-    // Add the stresses to the table.
-
-    table.addBlock ( ielems, jcols, elStress );
   }
+
+  // Add the stresses to the table.
+
+  table.addBlock ( ielems, jcols, elStress );
 }
 
 
@@ -1455,7 +1453,7 @@ void GradientCrystalPlasticityModel::getStrain_
   const int  ipCount    = shape_->ipointCount ();
   const int  strCount   = STRAIN_COUNTS[rank_];
 
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
+  Matrix     N          = shape_->getShapeFunctions ();
 
   Matrix     ndStrain   ( nodeCount, strCount );
   Vector     ndWeights  ( nodeCount );
@@ -1516,7 +1514,7 @@ void GradientCrystalPlasticityModel::getStrain_
   {
     // Get the global element index.
 
-    int  ielem = ielems[ie];
+    const int  ielem = ielems[ie];
 
     // Get the element nodes.
 
@@ -1537,8 +1535,8 @@ void GradientCrystalPlasticityModel::getStrain_
       // Extrapolate the integration point strains to the nodes using
       // the transposed shape functions.
 
-      ndStrain  += matmul ( sfuncs(ALL,ip), strain_(slice(BEGIN,strCount),ipoint) );
-      ndWeights += sfuncs(ALL,ip);
+      ndStrain  += matmul ( N(ALL,ip), strain_(slice(BEGIN,strCount),ipoint) );
+      ndWeights += N(ALL,ip);
     }
 
     // Increment the table weights. When the complete table has been
@@ -1662,11 +1660,11 @@ void GradientCrystalPlasticityModel::getTau_
   IdxVector  ielems     = egroup_ .getIndices  ();
   IdxVector  ipnodes    = ipnodes_.getIndices  ();
 
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
-
   const int  ielemCount = ielems.size         ();
   const int  nodeCount  = shape_->nodeCount   ();
   const int  ipCount    = shape_->ipointCount ();
+
+  Matrix     N          = shape_->getShapeFunctions ();
 
   Matrix     ndTau      ( nodeCount, nslips_ );
   Vector     ndWeights  ( nodeCount );
@@ -1688,7 +1686,7 @@ void GradientCrystalPlasticityModel::getTau_
   {
     // Get the global element index.
 
-    int  ielem = ielems[ie];
+    const int  ielem = ielems[ie];
 
     // Get the element nodes.
 
@@ -1715,8 +1713,8 @@ void GradientCrystalPlasticityModel::getTau_
       // Extrapolate the integration point taus to the nodes using
       // the transposed shape functions.
 
-      ndTau     += matmul ( sfuncs(ALL,ip), tau );
-      ndWeights += sfuncs(ALL,ip);
+      ndTau     += matmul ( N(ALL,ip), tau );
+      ndWeights += N(ALL,ip);
     }
 
     // Increment the table weights. When the complete table has been
@@ -1751,8 +1749,6 @@ void GradientCrystalPlasticityModel::getElemTau_
 
   // Get the integration point nodes for this model
   IdxVector   ipnodes    = ipnodes_.getIndices ();
-
-  Matrix     sfuncs     = shape_->getShapeFunctions ();
 
   const int  elemCount  = ielems.size         ();
   const int  ipCount    = shape_->ipointCount ();
@@ -1802,18 +1798,15 @@ void GradientCrystalPlasticityModel::getElemTau_
                   ipnodes[ipoint], tauTypes_[islip] );
 
         tau[islip]  = select ( state, tauDofs[islip] );
-      }
 
-      for ( int jj = 0; jj < nslips_; jj++ )
-      {
-        elTau(ie,jj)  += tau[jj][ip]/ipCount;
+        elTau(ie,islip)  += tau[islip][ip]/ipCount;
       }
     }
-
-    // Add the stresses to the table.
-
-    table.addBlock ( ielems, jcols, elTau );
   }
+
+  // Add the stresses to the table.
+
+  table.setBlock ( ielems, jcols, elTau );
 }
 
 
