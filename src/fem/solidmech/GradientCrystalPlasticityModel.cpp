@@ -12,9 +12,7 @@
  *     - [11 June 2024] added functions to write stress,
  *       strain, and tau nodal and element tables. (RB)
  * 
- *  TO-DO: Performance enhancements! Too many loops!
- *  Initialize variables together for better cache
- *  utilization!
+ *  @todo Simplify some data structures, reduce loops.
  *
  */
 
@@ -1251,7 +1249,7 @@ void GradientCrystalPlasticityModel::getStress_
       // Get the corresponding material point ipoint
       // of element ielem integration point ip from the mapping
 
-      int ipoint = ipMpMap_ ( ielem, ip );
+      const int ipoint = ipMpMap_ ( ielem, ip );
 
       // Extrapolate the integration point stresses to the nodes using
       // the transposed shape functions.
@@ -1400,7 +1398,7 @@ void GradientCrystalPlasticityModel::getElemStress_
       // Get the corresponding material point ipoint
       // of element ielem integration point ip from the mapping
 
-      int ipoint = ipMpMap_ ( ielems[ie], ip );
+      const int ipoint = ipMpMap_ ( ielems[ie], ip );
 
       // Extrapolate the integration point stresses to the nodes using
       // the transposed shape functions.
@@ -1422,10 +1420,7 @@ void GradientCrystalPlasticityModel::getElemStress_
         stressIp -= ipSlip * Dsm_[islip];
       }
 
-      for ( int jj = 0; jj < strCount; jj++ )
-      {
-        elStress(ie,jj)  += stressIp[jj]/ipCount;
-      }
+      elStress(ie,ALL) += stressIp/ipCount;
     }
   }
 
@@ -1631,10 +1626,7 @@ void GradientCrystalPlasticityModel::getElemStrain_
 
       int ipoint = ipMpMap_( ielems[ie], ip );
 
-      for ( int jj = 0; jj < strCount; jj++ )
-      {
-        elStrain(ie,jj)  += strain_(jj,ipoint)/ipCount;
-      }
+      elStrain(ie,ALL)  += strain_(ALL,ipoint)/ipCount;
     }
   }
 
