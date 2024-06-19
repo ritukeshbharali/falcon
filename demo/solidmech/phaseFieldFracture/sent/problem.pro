@@ -201,7 +201,7 @@ extraModules =
     
   };
 
-  vtk = "paraview"
+  vtk = "Paraview"
     {
        fileName      = "$(CASE_NAME)_out";
        elements      = "DomainElems";

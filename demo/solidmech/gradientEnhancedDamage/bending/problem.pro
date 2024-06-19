@@ -87,7 +87,7 @@ model =  "Matrix"
  
 extraModules =
 {
-  modules = ["solver", "graph", "lodi", "view" ];
+  modules = ["solver", "graph", "lodi", "view", "vtk" ];
 
   solver =  "Nonlin"
   {
@@ -118,17 +118,6 @@ extraModules =
       file       = "$(CASE_NAME)_lodi.dat";
       header     = "  uy | fy ";
       dataSets   = ["-model.model.lodi.disp[1]","-0.05* model.model.lodi.load[1]"];
-    };
-    
-    vtk = "Paraview"
-    {
-       fileName   = "$(CASE_NAME)";
-       elements = "bulk";
-       interval = 10;
-       dofs     = ["dx","dy"];
-       //data     = ["damage"];
-       data     = ["stress","strain","damage"];
-
     };
 
 view = "FemView"
@@ -167,4 +156,15 @@ view = "FemView"
       };
     };
 };
+
+vtk = "Paraview"
+    {
+       fileName   = "$(CASE_NAME)";
+       elements = "bulk";
+       interval = 10;
+       dofs     = ["dx","dy"];
+       //data     = ["damage"];
+       data     = ["stress","strain","damage"];
+
+    };
 };

@@ -395,7 +395,7 @@ extraModules =
     
   };
 
-  vtkout = "vtk"
+  vtkout = "Paraview"
     {
        fileName      = "$(CASE_NAME)_out";
        elements      = "allElems";

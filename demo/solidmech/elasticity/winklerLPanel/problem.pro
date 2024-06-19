@@ -119,7 +119,7 @@ extraModules =
       dataSets   = ["model.model.lodi.disp[1]","model.model.lodi.load[1]"];
     }; 
 
-  vtk = "paraview"
+  vtk = "Paraview"
     {
        fileName      = "$(CASE_NAME)_out";
        elements      = "DomainElems";
