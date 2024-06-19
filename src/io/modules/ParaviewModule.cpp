@@ -20,23 +20,16 @@
  *  Module in the *.pro file. Data is printed every
  *  'interval' step(s).
  * 
- *  Usage:      
- * 
- *  vtk = "vtkWriter"
- *    {
- *       fileName = "$(CASE_NAME)_out";
- *       elements = "DomainElems";
- *       interval = 1;
- *       data     = ["stress","strain"];
- *       dataType = "nodes";   // "elems"
- *    };
- *
  *  Updates (when, what and who)
- *     - [28 March 2022] throws an IllegalInput exception
- *       when dataType_ is not nodes or elems.
+ *  - [28 March 2022] throws an IllegalInput exception
+ *       when dataType_ is not nodes or elems. (RB)
+ *  - [18 June 2022] ignores solution fields defined on
+ *    dummy nodes, the solution fields are printed per
+ *    components instead of the component wise merged
+ *    style. Solution fields on the dummy nodes may be
+ *    extracted as PointData or CellData. (RB)
  *       
  */
-
 
 /* Include jem and jive headers */
 
@@ -56,6 +49,8 @@
 #include <jive/model/Actions.h>
 #include <jive/implict/SolverInfo.h>
 #include <jive/app/ModuleFactory.h>
+
+#include <utility>
 
 /* Include user-defined class headers */
 
@@ -120,92 +115,106 @@ Module::Status ParaviewModule::init
     const Properties&  globdat )
 
 {
-   using jive::mp::Globdat;
+  using jive::mp::Globdat;
 
-   // MPI ( Get the number of process )  
+  const String context = getContext();
 
-   mpx_    = Globdat::getMPContext ( globdat );
-   nProcs_ = 1;                                   // maybe not required!
-   nProcs_ = mpx_-> size ();
+  // Get the MPI communicator
+  mpx_    = Globdat::getMPContext ( globdat );
 
-   Properties  myProps = props.getProps ( myName_ );
-   Properties  myConf  = conf.makeProps ( myName_ );
+  // Declare the property tree for this module
 
-   const String context = getContext();
+  Properties  myProps = props.getProps ( myName_ );
+  Properties  myConf  = conf.makeProps ( myName_ );
 
-   // Get the element group and extract corresponding nodes and dof space
+  // Get the element group and extract corresponding nodes and dof space
 
-   egroup_ = ElemGroup::get      ( myConf, myProps, globdat, context );
-   elems_  = egroup_.getElements ( );
-   nodes_  = elems_ .getNodes    ( );
-   dofs_   = XDofSpace::get      ( nodes_.getData(), globdat );
+  egroup_ = ElemGroup::get      ( myConf, myProps, globdat, context );
+  elems_  = egroup_.getElements ();
+  nodes_  = elems_ .getNodes    ();
+  dofs_   = XDofSpace::get      ( nodes_.getData(), globdat );
 
-   // Get some additional data ( number of nodes, elements, mesh rank,
-   // dofs per node )
+  // Extract the relevant elements and nodes
+  // inodes is a bit hacky (unavoidable)!
+
+  ielems_  .resize( egroup_.size() );
+  ielems_ = egroup_.getIndices();
+
+  IdxVector inodes = elems_.getUniqueNodesOf 
+                                   ( egroup_.getIndices() );
+   
+  inodes_.resize( inodes.size() );
+  inodes_ = inodes;
+
+  // Sort inodes in ascending order (without this,
+  // the solution field is incorrectly mapped to nodes)
+
+  jem::sort(inodes_);
+
+  // Get some additional data ( number of nodes, elements
+  // , mesh rank, dofs per node )
   
-   nodeCount_    = nodes_.size     ( );
-   elemCount_    = egroup_.size    ( );
-   rank_         = nodes_.rank     ( );
-   dofTypeCount_ = dofs_->typeCount( );
+  nodeCount_    = inodes_.size     ();
+  elemCount_    = ielems_.size     ();
+  rank_         = nodes_.rank      ();
+  dofTypeCount_ = dofs_->typeCount ();
 
-   // Get element information (element indices and nodes per element)
+  // Get nodes per element
 
-   ielems_.resize ( elemCount_ );
-   ielems_        = egroup_.getIndices ();
-   noNodePerElem_ = elems_.getElemNodeCount(ielems_[0]);
+  nodesPerElem_ = elems_.getElemNodeCount(ielems_[0]);
 
-   // Get number of dofs from the XDofSpace
+  // Get dof names and their types
 
    dofNames_.resize ( dofTypeCount_ );
    dofTypes_.resize ( dofTypeCount_ );
-
+   
    dofNames_ = dofs_->getTypeNames();
 
    for ( idx_t i = 0; i < dofTypeCount_; i++ )
    {
-     dofTypes_[i] = dofs_->addType ( dofNames_[i] );
+     dofTypes_[i] = dofs_->findType ( dofNames_[i] );
    }
 
-   // Get element types
-
+   // Element mapping based on mesh rank
    // (2D)
 
    if ( rank_ == 2 )
    {
-     // Check for Triangles (T3, T6)
-
-     if ( noNodePerElem_ == 3 )
+     // Check for triangles (T3, T6)
+     if ( nodesPerElem_ == 3 )
      {
-       numVertexesPerCell_ = 3;
-       vtkCellCode_        = 5;
+       nVtxPerElem_  = 3;
+       vtkCellCode_  = 5;
+
+       vtxNodes_.resize( nVtxPerElem_ );
+       vtxNodes_ = {0,1,2};
      }
-     else if ( noNodePerElem_ == 6 )
+     else if ( nodesPerElem_ == 6 )
      {
-       numVertexesPerCell_ = 3;
-       vtkCellCode_        = 5;
+       nVtxPerElem_  = 3;
+       vtkCellCode_  = 5;
 
-       // Get corner/vertex nodes for T6
-       cornerNodes_.resize( numVertexesPerCell_ );
-       cornerNodes_ = {0,2,4};
+       vtxNodes_.resize( nVtxPerElem_ );
+       vtxNodes_ = {0,2,4};
      }
 
      // Check for Quads (Q4, Q8, Q9)
-
-     else if ( noNodePerElem_ == 4 )
+     else if ( nodesPerElem_ == 4 )
      {
-       numVertexesPerCell_ = 4;
-       vtkCellCode_        = 9;
+       nVtxPerElem_  = 4;
+       vtkCellCode_  = 9;
+
+       vtxNodes_.resize( nVtxPerElem_ );
+       vtxNodes_ = {0,1,2,3};
      }
-     else if ( noNodePerElem_ == 8 || noNodePerElem_ == 9 )
+     else if ( nodesPerElem_ == 8 || nodesPerElem_ == 9 )
      {
-       numVertexesPerCell_ = 4;
-       vtkCellCode_        = 9;
+       nVtxPerElem_  = 4;
+       vtkCellCode_  = 9;
 
-       // Get corner/vertex nodes for Q8, Q9
-       cornerNodes_.resize( numVertexesPerCell_ );
-       cornerNodes_ = {0,2,4,6};
+       vtxNodes_.resize( nVtxPerElem_ );
+       vtxNodes_ = {0,2,4,6};
      }
-
      else
      {
        const String  context = getContext ();
@@ -213,65 +222,63 @@ Module::Status ParaviewModule::init
        throw IllegalInputException (
          context,
          String::format (
-           "invalid element type: (should be T3, T6, Q4, Q8 or Q9)"
+           "invalid 2D element (supported types: T3, T6, Q4, Q8, Q9)"
         )
        );
      }
    }
-
    // (3D)
-
    else if ( rank_ == 3 )
    {
-     // Check for Tetrahedrons (Tet4, Tet10)
+    // Check for Tetrahedrons (Tet4, Tet10)
+    if ( nodesPerElem_ == 4 )
+    {
+      nVtxPerElem_  = 4;
+      vtkCellCode_  = 10;
 
-     if ( noNodePerElem_ == 4 )
-     {
-       numVertexesPerCell_ = 4;
-       vtkCellCode_        = 10;
-     }
-     else if ( noNodePerElem_ == 10 )
-     {
-       numVertexesPerCell_ = 4;
-       vtkCellCode_        = 10;
-       
-       // Get corner/vertex nodes for Tet10
-       cornerNodes_.resize( numVertexesPerCell_ );
-       cornerNodes_ = {0,2,4,9}; 
-     }
+      vtxNodes_.resize ( nVtxPerElem_ );
+      vtxNodes_ = {0,1,2,3};
+    }
+    else if ( nodesPerElem_ == 10 )
+    {
+      nVtxPerElem_  = 4;
+      vtkCellCode_  = 10;
 
-     // Check for Hexahedrons (Hex8, Hex20)
+      vtxNodes_.resize ( nVtxPerElem_ );
+      vtxNodes_ = {0,2,4,9};
+    }
 
-     else if ( noNodePerElem_ == 8 )
-     {
-       numVertexesPerCell_ = 8;
-       vtkCellCode_        = 12;
-     }
-     else if ( noNodePerElem_ == 20 )
-     {
-       numVertexesPerCell_ = 8;
-       vtkCellCode_        = 12;
+    // Check for Hexahedrons (Hex8, Hex20)
+    else if ( nodesPerElem_ == 8 )
+    {
+      nVtxPerElem_  = 8;
+      vtkCellCode_  = 12;
 
-       // Get corner/vertex nodes for Hex20
-       cornerNodes_.resize( numVertexesPerCell_ );
-       cornerNodes_ = {0,2,4,6,12,14,16,18};
-     }
+      vtxNodes_.resize ( nVtxPerElem_ );
+      vtxNodes_ = {0,1,2,3,4,5,6,7};
+    }
+    else if ( nodesPerElem_ == 20 )
+    {
+      nVtxPerElem_  = 8;
+      vtkCellCode_  = 12;
 
-     else
-     {
-       const String  context = getContext ();
+      vtxNodes_.resize ( nVtxPerElem_ );
+      vtxNodes_ = {0,2,4,6,12,14,16,18};
+    }
+    else
+    {
+      const String  context = getContext ();
 
-       throw IllegalInputException (
-         context,
-         String::format (
-           "invalid element type: (should be Tet4, Tet10, Hex8 or Hex20)"
+      throw IllegalInputException (
+        context,
+        String::format (
+           "invalid 3D element (supported types: Tet4, Tet10, Hex8, Hex20)"
         )
-       );
-     }
-
+      );
+    }
    }
 
-   return OK;
+  return OK;
 }
 
 
@@ -333,7 +340,7 @@ Module::Status ParaviewModule::run ( const Properties& globdat )
   stepStamps_.pushBack ( step );
 
   // -----------------------------------------------------------------------------
-  // Print a PVD file ( overwritten on every step )
+  // Write a PVD file ( overwritten on every step )
   // -----------------------------------------------------------------------------
 
   // Allocate string to store pvd filename
@@ -368,7 +375,7 @@ Module::Status ParaviewModule::run ( const Properties& globdat )
   pvdWriter->close();
 
   // -----------------------------------------------------------------------------
-  // Print a VTU file ( for current step )
+  // Write a VTU file ( for current step )
   // -----------------------------------------------------------------------------
 
   const String fileNameVTU = fileName_ + "_p" + String ( myRank )
@@ -385,20 +392,26 @@ Module::Status ParaviewModule::run ( const Properties& globdat )
   writeVTUHeader_ ( vtuWriter );
   writeMesh_      ( vtuWriter );
 
-  // Begin printing PointData
+  // Write PointData header. This is because, the solution
+  // which is PointData (nodal data) is always printed to
+  // the vtu file by default.
 
   *vtuWriter << "<PointData  Vectors=\"NodalData\"> \n";
 
-  // Print the solution ( in Jive terminology, 'state' )
+  // Write solution (STATE0) to file. Instead of globdat,
+  // send the state vector.
 
   writeState_ ( vtuWriter, globdat );
 
-  // Check if additional PointData is requested
+  // Proceed to write additional PointData requested
+  // by the user.
 
   if ( pointData_.size() > 0 )
   {
     Properties      params  ("actionParams");
     Vector          weights ( nodeCount_ );
+
+    // Loop over each point data requested
 
     for ( idx_t iData = 0; iData < pointData_.size(); iData++ )
     {
@@ -406,38 +419,65 @@ Module::Status ParaviewModule::run ( const Properties& globdat )
       weights            = 0.0;
 
       Ref<Model>  model  = Model::get ( globdat, getContext() );
-      Ref<XTable> xtable = newInstance<DenseTable>  ( tname, nodes_.getData() );
+      Ref<XTable> xtable = newInstance<DenseTable>  ( tname, 
+                                             nodes_.getData() );
 
       params.set ( ActionParams::TABLE,         xtable  );
       params.set ( ActionParams::TABLE_NAME,    tname   );
       params.set ( ActionParams::TABLE_WEIGHTS, weights );
 
-      bool updated = model->takeAction ( Actions::GET_TABLE, params, globdat );
-      
-      weights = where ( abs( weights ) < Limits<double>::TINY_VALUE, 1.0, 1.0 / weights );
-      xtable -> scaleRows    ( weights );
+      // Ask models to update the table
 
-      if ( updated ) 
+      bool updated = model->takeAction ( Actions::GET_TABLE, 
+                                              params, globdat );
+
+      // If table is updated, scale the rows and write to file
+
+      if ( updated )
       {
-        writeTable_   ( vtuWriter, xtable, tname );
+        weights = where ( abs( weights ) < 
+                               Limits<double>::TINY_VALUE,
+                                           1.0, 1.0 / weights );
+        
+        // If dummy nodes are present, xtable will have more
+        // rows than the size of weights vector. Consequently,
+        // xtable -> scaleRows ( weights ) will return errors.
+        // As a quick fix, we extend weights vector to match
+        // the table size.
+
+        if ( xtable->rowCount() > weights.size() )
+        {
+          weights.reshape( xtable->rowCount() );
+
+          weights[slice(weights.size(),END)] = 0.0;
+        }
+
+        xtable -> scaleRows    ( weights );
+
+        // Write table excluding dummy nodes
+
+        writeTable_ ( vtuWriter, xtable, tname, nodeCount_ );
       }
-    }
+    }  
   }
 
-  // Close PointData
+  // Write PointData closure
 
   *vtuWriter << "</PointData> \n";
 
-  // Check if additional CellData is requested
+  // Proceed to write additional CellData requested
+  // by the user.
 
   if ( cellData_.size() > 0 )
   {
     Properties      params  ("actionParams");
-    Vector          weights ( elemCount_   );  // probably not required!
+    Vector          weights ( elemCount_   );
 
-    // Begin printing CellData
+    // Write CellData header to file
 
     *vtuWriter << "<CellData> \n";
+
+    // Loop over each cell data requested
 
     for ( idx_t iData = 0; iData < cellData_.size(); iData++ )
     {
@@ -445,31 +485,42 @@ Module::Status ParaviewModule::run ( const Properties& globdat )
       weights            = 1.0;
 
       Ref<Model>  model  = Model::get ( globdat, getContext() );
-      Ref<XTable> xtable = newInstance<DenseTable>  ( tname, elems_.getData() );
+      Ref<XTable> xtable = newInstance<DenseTable>  ( tname,
+                                             elems_.getData() );
 
       params.set ( ActionParams::TABLE,         xtable  );
       params.set ( ActionParams::TABLE_NAME,    tname   );
       params.set ( ActionParams::TABLE_WEIGHTS, weights );
 
-      bool updated = model->takeAction ( Actions::GET_TABLE, params, globdat );
+      bool updated = model->takeAction ( Actions::GET_TABLE,
+                                              params, globdat );
 
-      if ( updated ) 
+      // If table is updated, scale the rows and write to file
+
+      if ( updated )
       {
+        //weights = where ( abs( weights ) < 
+        //                       Limits<double>::TINY_VALUE,
+        //                                   1.0, 1.0 / weights );
+        //xtable -> scaleRows    ( weights );
+
         writeTable_   ( vtuWriter, xtable, tname, elemCount_ );
       }
     }
 
-    // Close CellData
+    // Write CellData closure to file
 
     *vtuWriter << "</CellData> \n";
-
   }
 
-  // Write Closure
+  // TO-DO: Add support for tensor data 
+  // (e.g. for stress, strain)
+
+  // Write closure for the VTU file
 
   writeVTUClosure_   ( vtuWriter );
 
-  // Flush and Close file
+  // Flush and Close the VTU file
 
   vtuWriter->flush();
   vtuWriter->close();
@@ -542,59 +593,59 @@ void ParaviewModule::writeVTUHeader_ ( Ref<PrintWriter> vtuWriter )
 
 void ParaviewModule::writeMesh_ ( Ref<PrintWriter> vtuWriter )
 {
+  // Get nodal coordinates (includes dummy nodes too!)
+  Matrix coords ( rank_, nodes_.size() );
+  nodes_.getSomeCoords ( coords, inodes_ );
 
-  // Write node coordinates
+  // Write nodal data
 
   *vtuWriter << "<Points> \n";
   *vtuWriter << "<DataArray  type=\"Float64\"  NumberOfComponents=\"3\" format=\"ascii\" >\n";
 
-  Matrix coords(rank_,nodeCount_);
-
-  nodes_.getCoords ( coords );
-
+  // Mesh rank dependent print
+  // (2D)
   if ( rank_ == 2 )
   {
-    for(idx_t i = 0; i < nodeCount_; ++i )
+    for ( idx_t i = 0; i < nodeCount_; ++i )
     {
-      *vtuWriter << coords(0,i) << " " << coords(1,i) << " " << 0. << '\n';
+      *vtuWriter << coords(0,i) << " " 
+                 << coords(1,i) << " " 
+                 << 0. << '\n';
     }
   }
-  else
+  // (3D)
+  else if ( rank_ == 3 )
   {
-    for(idx_t i = 0; i < nodeCount_; ++i )
+    for ( idx_t i = 0; i < nodeCount_; ++i )
     {
-      *vtuWriter << coords(0,i) << " " << coords(1,i) << " " << coords(2,i) << '\n';
+      *vtuWriter << coords(0,i) << " " 
+                 << coords(1,i) << " " 
+                 << coords(2,i) << '\n';
     }
   }
 
   *vtuWriter << "</DataArray>\n </Points>\n";
 
-  // Write element connectivity
+  // Initialize inodes to store element connectivity
 
-  IdxVector inodes(noNodePerElem_);
+  IdxVector inodes(nodesPerElem_);
+
+  // Write element connectivity header
 
   *vtuWriter << "<Cells> \n";
   *vtuWriter << "<DataArray  type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
 
+  // Write element connectivity data
+  // (Only the vertices)
   for ( idx_t ie = 0; ie < elemCount_; ie++ )
-  { 
-    int  ielem = ielems_[ie]; 
-    elems_.getElemNodes  ( inodes, ielem );
+  {
+    const int ielem = ielems_[ie];
 
-    // Write only the corner nodes for higher order elements
-    // Middle nodes are not required for mesh visualization
+    elems_.getElemNodes ( inodes, ielem );
 
-    if (noNodePerElem_ == numVertexesPerCell_ )
+    for ( idx_t i = 0; i < nVtxPerElem_; i++ )
     {
-      for ( idx_t in = 0; in < noNodePerElem_; in++ ){
-        *vtuWriter << inodes[in] << " "; 
-      }
-    }
-    else
-    {
-      for ( idx_t in = 0; in < numVertexesPerCell_; in++ ){
-        *vtuWriter << inodes[cornerNodes_[in]] << " "; 
-      }
+      *vtuWriter << inodes[vtxNodes_[i]] << " ";
     }
 
     *vtuWriter << endl;
@@ -602,21 +653,22 @@ void ParaviewModule::writeMesh_ ( Ref<PrintWriter> vtuWriter )
 
   *vtuWriter << "</DataArray>\n";
 
-  // write cell offset
+  // Write cell (element) offset
+
+  idx_t offset = 0;
 
   *vtuWriter << "<DataArray  type=\"Int32\"  Name=\"offsets\"  format=\"ascii\"> \n";
 
-  int offset = 0;
   for ( idx_t ie = 0; ie < elemCount_; ie++ )
   {
-    offset += numVertexesPerCell_;
-    *vtuWriter <<  offset << endl;
+    offset += nVtxPerElem_;
+    *vtuWriter << offset << endl;
   }
 
   *vtuWriter << "</DataArray>\n";
 
-  // Print cell types
-  
+  // Write cell (element) types [VTK notation]
+
   *vtuWriter << "<DataArray  type=\"UInt8\"  Name=\"types\"  format=\"ascii\"> \n";
   
   for ( idx_t ie = 0; ie < elemCount_; ie++ )
@@ -625,90 +677,64 @@ void ParaviewModule::writeMesh_ ( Ref<PrintWriter> vtuWriter )
   }
 
   *vtuWriter << "</DataArray> \n </Cells> \n";
-
 }
 
 //-----------------------------------------------------------------------
 //   writeState_
 //-----------------------------------------------------------------------
 
-// Write current (converged) step solution vector (STATE)
-    
+// Writes the current (converged) step solution vector (STATE)
 
 void ParaviewModule::writeState_ ( Ref<PrintWriter> vtuWriter,
-                                           const Properties& globdat )
-{   
-   // Displacement field
+                              const Properties& globdat  )
+{
+  // Get the state vector
 
-   Vector  state;
-   StateVector::get ( state, dofs_, globdat );
+  Vector state; StateVector::get ( state, dofs_, globdat );
 
-   int maxDofCount = rank_ == 2 ? rank_+1 : rank_;
+  // Allocate vectors to extract dof number and values
 
-   const String str1 =  String::format("<DataArray type=\"Float64\" Name=\"U\" NumberOfComponents=\"%d\" format=\"ascii\"> \n" , maxDofCount);
-   *vtuWriter          << str1;
+  IdxVector idof;  idof .resize( 1 );
+  IdxVector idofs; idofs.resize( nodeCount_ );
+  Vector    ivals; ivals.resize( nodeCount_ );
 
-   IdxVector  idofs    ( rank_       );
-   Vector     nodeDisp ( maxDofCount );
+  // Loop over the dofs
 
-   for (idx_t i = 0; i < nodeCount_; ++i)
-   {
-    nodeDisp = 0.;
+  for ( idx_t i = 0; i < dofTypeCount_; i++ )
+  {
+    // Dof type index
+
+    idof[0] = i;
+
+    // Get the dofs
+
     try
     {
-      dofs_->getDofIndices ( idofs, i, dofTypes_[slice(BEGIN, rank_)] );
-      nodeDisp[slice(BEGIN,rank_)] = select ( state, idofs );
+      dofs_->getDofIndices ( idofs, inodes_, idof );
+      ivals = select ( state, idofs );
+
+      // Write header to file
+
+      const String headStr = String::format("<DataArray type=\"Float64\" Name=\"%s\" NumberOfComponents=\"%d\" format=\"ascii\"> \n" , dofNames_[i] , 1 );
+      *vtuWriter << headStr;
+
+      // Write the data
+
+      for (idx_t j = 0; j< nodeCount_-1; j++)
+      {
+        *vtuWriter << String::format( "%12.6e  \n", ivals[j] );
+      }
+      *vtuWriter << String::format( "%12.6e  ", ivals[nodeCount_-1] );
+      *vtuWriter << endl;
+
+      // Write closure
+
+      *vtuWriter << "</DataArray> \n";
+
     }
     catch ( const jem::IllegalInputException& ex )
     {}
-
-    for (idx_t j = 0; j< maxDofCount; ++j)
-    {
-      *vtuWriter << String::format( "%12.6e   ", nodeDisp[j] );
-    }
-    *vtuWriter << endl;
-   }
-
-   *vtuWriter << "</DataArray> \n";
-
-
-   // (Possible) additional fields
-   // Field names chosen from FE Model
-
-   if ( dofTypeCount_ > rank_ )
-   {
-
-    int addlDofs = dofTypeCount_ - rank_;
-
-    for ( int j = 1; j <= addlDofs; j++ )
-    {
-
-      const String str2 = String::format("<DataArray type=\"Float64\" Name=\"%s\" NumberOfComponents=\"%d\" format=\"ascii\"> \n" , dofNames_[rank_+j-1] , 1 );
-      *vtuWriter << str2;
-
-     idx_t    idof;
-     double   val;
-
-     for (idx_t i = 0; i < nodeCount_; ++i)
-     {
-       val = 0.0;
-       try
-       {
-         idof = dofs_->getDofIndex ( i, dofTypes_[rank_+j-1] );
-         val  = state[idof];
-       }
-       catch ( const jem::IllegalInputException& ex )
-       {
-         
-       }
-       *vtuWriter << String::format( "%12.6e   ", val );
-       *vtuWriter << endl;
-     }
-
-     *vtuWriter << "</DataArray> \n";
-
-    }
-   }
+  }
 }
 
 //-----------------------------------------------------------------------
@@ -722,45 +748,9 @@ void ParaviewModule::writeVTUClosure_ ( Ref<PrintWriter> vtuWriter )
    *vtuWriter << "</VTKFile> \n";
 }
 
+
 //-----------------------------------------------------------------------
 //   writeTable_
-//-----------------------------------------------------------------------
-    
-
-void ParaviewModule::writeTable_ 
-
-     ( Ref<PrintWriter> vtuWriter,
-       Ref<XTable>      table,
-       const String&    tname )
-{
-   using jive::StringVector;
-
-   StringVector     colNames = table->getColumnNames  ();
-   idx_t            colCount = colNames.size          ();
-   idx_t            rowCount = table->rowCount        ();
-
-   Matrix           coord;
-
-   // convert a table to a matrix (function in BasicUtils.cpp)
-   
-   matrixFromTable ( coord, *table, colNames );
-   
-   *vtuWriter << String::format(" <DataArray  type=\"Float64\"  Name=\"%s\" NumberOfComponents=\"%d\" format=\"ascii\"> \n",
-                             tname, colCount);
-
-   for (idx_t i = 0; i < rowCount; ++i)
-   {
-      for (idx_t j = 0; j< colCount; ++j)
-      *vtuWriter << String::format( "%12.8f   ", coord(i,j) );
-      *vtuWriter << endl;
-   }
-
-   *vtuWriter << "</DataArray> \n";
-}
-
-
-//-----------------------------------------------------------------------
-//   writeTable_ (overloaded)
 //-----------------------------------------------------------------------
     
 
@@ -788,7 +778,9 @@ void ParaviewModule::writeTable_
    for (idx_t i = 0; i < rowCount; ++i)
    {
       for (idx_t j = 0; j< colCount; ++j)
-      *vtuWriter << String::format( "%12.8f   ", coord(i,j) );
+      {
+        *vtuWriter << String::format( "%12.8f   ", coord(i,j) );
+      }
       *vtuWriter << endl;
    }
 
@@ -876,5 +868,5 @@ void declareParaviewModule ()
 {
   using jive::app::ModuleFactory;
 
-  ModuleFactory::declare ( "paraview", & ParaviewModule::makeNew );
+  ModuleFactory::declare ( "Paraview", & ParaviewModule::makeNew );
 }

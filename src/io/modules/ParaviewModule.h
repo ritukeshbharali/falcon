@@ -20,18 +20,14 @@
  *  Module in the *.pro file. Data is printed every
  *  'interval' step(s).
  * 
- *  Usage:      
- * 
- *  vtk = "vtkWriter"
- *    {
- *       fileName = "$(CASE_NAME)_out";
- *       elements = "DomainElems";
- *       interval = 1;
- *       data     = ["stress","strain"];
- *       dataType = "nodal";
- *    };
- *
  *  Updates (when, what and who)
+ *  - [28 March 2022] throws an IllegalInput exception
+ *       when dataType_ is not nodes or elems. (RB)
+ *  - [18 June 2022] ignores solution fields defined on
+ *    dummy nodes, the solution fields are printed per
+ *    components instead of the component wise merged
+ *    style. Solution fields on the dummy nodes may be
+ *    extracted as PointData or CellData. (RB)
  *       
  */
 
@@ -47,6 +43,8 @@
 #include <jem/mp/utilities.h>
 #include <jive/mp/Globdat.h>
 #include <jem/util/ArrayBuffer.h>
+
+#include <map>
 
 
 namespace jem
@@ -100,8 +98,21 @@ typedef ElementGroup            ElemGroup;
 //=======================================================================
 
 /** @brief 
- *  The ParaviewModule class writes vtk files for post-processing 
+ *  The \c ParaviewModule class writes vtk files for post-processing 
  *  simulation data in Paraview, MayaVi or VisIt.
+ * 
+ *  Below is an example how \c ParaviewModule may be used:
+ * 
+ *  \code
+ *  vtk = "paraview"
+ *    {
+ *       fileName = "$(CASE_NAME)_out";
+ *       elements = "DomainElems";
+ *       printInterval = 1;
+ *       pointData  = ["stress","strain"];
+ *       cellData  = ["stress","strain"];
+ *    };
+ *  \endcode
  */ 
 
 class ParaviewModule : public Module
@@ -118,7 +129,7 @@ class ParaviewModule : public Module
 
   explicit                  ParaviewModule
 
-    ( const String&           name = "paraview" );
+    ( const String&           name = "vtk" );
 
   virtual Status            init
 
@@ -182,22 +193,19 @@ class ParaviewModule : public Module
 
   void                     writeTable_      ( Ref<PrintWriter>  vtuWriter,
                                               Ref<XTable>       table,
-                                              const String&     tname    );
-
-  void                     writeTable_      ( Ref<PrintWriter>  vtuWriter,
-                                              Ref<XTable>       table,
                                               const String&     tname,
                                               const int         rowCount );
 
  private:
 
   Ref<Context>             mpx_;
-  int                      nProcs_;
 
   String                   fileName_;
 
   int                      rank_;
-  
+
+  // Mesh details
+
   Assignable<ElemGroup>    egroup_;
   Assignable<ElemSet>      elems_;
   Assignable<NodeSet>      nodes_;
@@ -205,19 +213,24 @@ class ParaviewModule : public Module
   IdxVector                ielems_;
   int                      elemCount_;
   int                      nodeCount_;
+
+  // Element mapping to VTK format
   
+  int                      nVtxPerElem_;
+  IdxVector                vtxNodes_;
+  int                      vtkCellCode_;
+  int                      nodesPerElem_;
+
+  // Dofspace details
+
   Ref<XDofSpace>           dofs_;
-  idx_t                    dofTypeCount_;
-  IdxVector                dofTypes_;
   StringVector             dofNames_;
+  IdxVector                dofTypes_;
+  idx_t                    dofTypeCount_;
 
-  IdxVector                cornerNodes_;
-  idx_t                    numVertexesPerCell_;
-  idx_t                    vtkCellCode_;
-  int                      noNodePerElem_;
-  
+  // Printing request details
+
   int                      interval_;
-
   StringVector             pointData_;
   StringVector             cellData_;
 
