@@ -34,6 +34,7 @@
  *     - [30 June 2023] Added wrapper to AMGCL (RB)
  *     - [02 Jan  2024] Added wrapper to NVIDIA AMGX (RB)
  *     - [02 Jan  2024] Added wrapper to Panua Pardiso (RB)
+ *     - [16 Apr  2024] Added wrapper to NVIDIA cuDSS (RB)
  */
 
 
@@ -70,6 +71,10 @@
 
 #if defined(WITH_AMGX)
 #include "AMGX.h"
+#endif
+
+#if defined(WITH_CUDSS)
+#include "cuDSSSolver.h"
 #endif
 
 #if defined(WITH_MUMPS)
@@ -133,6 +138,10 @@ static void declareSolvers_ ()
 
   #if defined(WITH_AMGX)
   AMGXSolver          :: declare ();
+  #endif
+
+  #if defined(WITH_CUDSS)
+  cuDSSSolver         :: declare ();
   #endif
 
   #if defined(WITH_MUMPS)

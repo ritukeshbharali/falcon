@@ -1,50 +1,51 @@
 
-/** @file AMGXSolver.h
- *  @brief Wrapper to solve a linear system with AMGX.
+/** @file cuDSSSolver.h
+ *  @brief Wrapper to solve a linear system of equations with NVIDIA cuDSS.
  * 
  *  Requires: 
  *     - NVIDIA GPU with Compute Capability >=3.0
- *     - AMGX installation with dependencies
+ *     - cuDSS installation
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
- *  Date: 02 January 2024 
+ *  Date: 23 March 2024 
  *
  *  Updates (when, what and who)
  *     - [XX YYYYY 2024]
  *       
  */
 
-#if defined(WITH_AMGX)
+#if defined(WITH_CUDSS)
 
-#ifndef JIVE_SOLVER_AMGX_H
-#define JIVE_SOLVER_AMGX_H
+#ifndef JIVE_SOLVER_CUDSS_H
+#define JIVE_SOLVER_CUDSS_H
 
 /* Include jive headers */
 
 #include <jive/solver/import.h>
 #include <jive/solver/DirectSolver.h>
 
-/* Include AMGX header file */
+/* Include cuda headers */
 
-#include "amgx_c.h"
+#include <cuda_runtime.h>
+#include "cuDSS.h"
 
-JIVE_BEGIN_PACKAGE( solver )
-
+JIVE_BEGIN_PACKAGE( solver )  
 
 class Constrainer;
 
 
 //=======================================================================
-//   class AMGXSolver
+//   class cuDSSSolver
 //=======================================================================
 
-/** @brief Implements NVIDIA's Algebraic multi-grid (AmgX) Solver
+/** @brief Implements NVIDIA's GPU-accelerated Direct Sparse Solver
  * 
- *  The class \c AMGXSolver implements a wrapper to solve the linear 
- *  system of equations using the Algebraic Multi-grid (AmgX) solver,
- *  distributed by NVIDIA <a href="https://github.com/NVIDIA/AMGX" target="_blank">(Link to Github repo)</a>.
+ *  The class \c cuDSSSolver implements a wrapper to solve the linear 
+ *  system of equations using the cuDSS solver, which is NVIDIA's
+ *  optimized, first-generation GPU-accelerated Direct Sparse Solver 
+ *  library.
  * 
- *  \note Wrapper works only for sequential (shared-memory) runs. 
+ *  \note Works only for sequential (shared-memory) runs. 
  * 
  *  \todo Add configuration options.
  * 
@@ -62,26 +63,22 @@ class Constrainer;
   
       solver =
       {
-        type = "AmgX"; 
+        type = "cuDSS"; 
       };
     };
  *  \endcode
  * 
- *  Additionally, a 'solver.json' file is required that configures
- *  the AmgX solver options. See <a href="https://github.com/NVIDIA/AMGX/tree/main/src/configs" target="_blank">(Github repo directory)</a>
- *  for inspiration.  
- * 
  */ 
 
-class AMGXSolver : public DirectSolver
+class cuDSSSolver : public DirectSolver
 {
  public:
 
-  JEM_DECLARE_CLASS       ( AMGXSolver, DirectSolver );
+  JEM_DECLARE_CLASS       ( cuDSSSolver, DirectSolver );
 
   static const char*        TYPE_NAME;
 
-                            AMGXSolver
+                            cuDSSSolver
 
     ( const String&           name,
       Ref<AbstractMatrix>     matrix,
@@ -151,7 +148,7 @@ class AMGXSolver : public DirectSolver
 
  protected:
 
-  virtual                  ~AMGXSolver          ();
+  virtual                  ~cuDSSSolver          ();
 
 
  private:
@@ -159,6 +156,8 @@ class AMGXSolver : public DirectSolver
   void                      update_           ();
   void                      valuesChanged_    ();
   void                      structChanged_    ();
+
+  void                      freeDeviceMemory_ ();
 
   void                      setEvents_
 
@@ -171,30 +170,41 @@ class AMGXSolver : public DirectSolver
   static const int          NEW_STRUCT_;
 
 
-  Ref<AbstractMatrix>       matrix_;
-  Ref<Constrainer>          conman_;
-  Ref<Writer>               debug_;
+  Ref<AbstractMatrix>       matrix_;       //!< Pointer to the Jive matrix
+  Ref<Constrainer>          conman_;       //!< Pointer to the Jive constrainer
+  Ref<Writer>               debug_;        //!< Pointer to the Jive printer
 
   int                       mode_;
-  double                    precision_;
+  double                    precision_;    //!< Precision
 
-  int                       iiter_;
-  double                    error_;
+  int                       iiter_;        //!< Iteration counter
+  double                    error_;        //!< Error norm(Ax-b)
   int                       events_;
   idx_t                     started_;
 
-  jem::Array<int>           offsets_;
-  jem::Array<int>           indices_;
-  Vector                    values_;
+  jem::Array<int>           offsets_;      //!< Row offsets of CSR matrix
+  jem::Array<int>           indices_;      //!< Column indices of CSR matrix
+  Vector                    values_;       //!< Values of CSR matrix
 
-  // AMGX Data structures
+  // cuDSS Data structures
 
-  AMGX_config_handle        AMGXcfg_;
-  AMGX_resources_handle     AMGXrsrc_;
-  AMGX_matrix_handle        AMGXA_;
-  AMGX_vector_handle        AMGXb_, AMGXx_;
-  AMGX_solver_handle        AMGXsolver_;
-  AMGX_SOLVE_STATUS         AMGXstatus_;
+  cudssMatrix_t A, x, b;                   //!< cudss Matrices for A,x and b
+                                           //!< A is of type CSR, x and b are Dense
+
+  cudssMatrixType_t     mtype;  // CUDSS_MTYPE_GENERAL
+  cudssMatrixViewType_t mview;  // CUDSS_MVIEW_FULL
+  cudssIndexBase_t      base;   // CUDSS_BASE_ZERO
+
+  cudaStream_t          stream = NULL;
+  cudssHandle_t         handle;
+  cudssConfig_t         solverConfig;
+  cudssData_t           solverData;
+
+  int    *offsets_d;    //!< Pointer to row offsets on device
+  int    *indices_d;    //!< Pointer to column indices on device
+  double *values_d;     //!< Pointer to values on device
+  double *du_d;         //!< Pointer to solution (x) on device
+  double *r_d;          //!< Pointer to residual (Ax-b) on device
 
 };
 
