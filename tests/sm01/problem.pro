@@ -77,7 +77,7 @@ model = "Matrix"
 
 extraModules =
 {
-  modules = ["solver","graph","view","vtk"];
+  modules = ["solver","graph","view"];
    
   solver = 
   {
@@ -155,13 +155,4 @@ extraModules =
     //updateWhen = "accepted";
     
   };
-
-  vtk = "paraview"
-    {
-       fileName      = "$(CASE_NAME)_out";
-       elements      = "DomainElems";
-       printInterval = 1;
-       pointData     = ["stress"];
-    };
-
 };
