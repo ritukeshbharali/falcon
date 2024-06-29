@@ -73,7 +73,6 @@ model = "Matrix"
 
         young    = 100.e+0;
         poisson  = 0.0;
-        rho      = 1.0;
       };
 
       fractureType    = "at2";
@@ -132,12 +131,8 @@ extraModules =
         bounds  = ["b1"];
         solver  =
         {
-          type        = "Pardiso";
-          mtype       = 11;
-          numThreads  = 2;
-          msglvl      = 0;
-          sortColumns = 1;
-          matrixChecker = 0;
+          type        = "SkylineLU";
+          useThreads  = true;
         };
         b1 = 
          {
@@ -154,12 +149,8 @@ extraModules =
         //loadScale = 0.00000;
         solver  =
         {
-          type        = "Pardiso";
-          mtype       = 11;
-          numThreads  = 2;
-          msglvl      = 0;
-          sortColumns = 1;
-          matrixChecker = 0;
+          type        = "SkylineLU";
+          useThreads  = true;
         };
         model = none;
       };

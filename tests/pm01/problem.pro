@@ -71,7 +71,9 @@ model = "Matrix"
        {
          type     = "Neumann";
          elements = "TopElems";
-         loads    = [0.0,-1.0e+04,0.0];
+         loadInit  = -1.0e+4;
+         loadIncr  = 0.0;
+         dof       = "dy";
          shape  =
           {
             type  = "BLine3";

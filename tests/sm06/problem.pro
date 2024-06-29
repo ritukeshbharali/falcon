@@ -88,6 +88,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [1.,1.,0.];
         direction = [-1.,1.,0.];
       };
@@ -97,6 +98,7 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [0.,1.,0.];
         direction = [1.,0.,0.];
       };
@@ -134,6 +136,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [0.3660254,1.3660254,0.];
         direction = [-1.3660254,0.3660254,0.];
       };
@@ -143,6 +146,7 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.5,0.8660254,0.];
         direction = [0.8660254,0.5,0.];
       };
@@ -180,6 +184,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [0.12325683, 1.40883205,0.];
         direction = [-1.40883205, 0.12325683,0.];
       };
@@ -189,6 +194,7 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.64278761, 0.76604444,0.];
         direction = [0.76604444, 0.64278761,0.];
       };
@@ -226,6 +232,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.3660254, 1.3660254,0.];
         direction = [-1.3660254, -0.3660254,0.];
       };
@@ -235,6 +242,7 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.8660254, 0.5,0.];
         direction = [0.5, 0.8660254,0.];
       };
@@ -272,6 +280,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.70710678, 1.22474487,0.];
         direction = [-1.22474487, -0.70710678,0.];
       };
@@ -281,6 +290,7 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.96592583, 0.25881905,0.];
         direction = [0.25881905, 0.96592583,0.];
       };

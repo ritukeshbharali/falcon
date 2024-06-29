@@ -81,27 +81,13 @@ model = "Matrix"
 
     force =  "LoadScale"
     {
-       scaleFunc = 
-       "
-       save
-       f_max   = 1.0
-       ,
-       t_max   = 5
-       let
-       t       = i
-       return
-       if ( t < t_max )
-       f_max
-       else
-       0.0
-       endif
-       ";
-
        model =
        {
          type     = "Neumann";
          elements = "TopElems";
-         loads    = [0.0,0.0,-1.0e-4];
+         loadInit  = -1.0e+4;
+         loadIncr  = 0.0;
+         dof       = "dp";
          shape  =
           {
             type  = "BLine3";
@@ -112,7 +98,7 @@ model = "Matrix"
             intScheme = "Gauss2";
           };
        };
-    };  
+    };
 
   };
 };
