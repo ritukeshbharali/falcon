@@ -8,6 +8,9 @@
  *  Updates (when, what and who)
  *     - [14 June 2024] added functions to write stress,
  *       strain, and slip nodal and element tables. (RB)
+ *     - [25 June 2024] added user-defined rotation 
+ *       parameter operating on the slip plane and 
+ *       direction for flexibility. (RB)
  * 
  *  @todo Simplify some data structures, reduce loops.
  *
@@ -137,7 +140,8 @@ typedef ElementGroup           ElemGroup;
         rho      = 0.0;                // Material density
       };
 
-      dtime  = 1.0;                    // Time step-size
+      rotation = 45.0;                 // Slip system rotation
+      dtime    = 1.0;                  // Time step-size
 
       slips = [ "slip0", "slip1", "slip2" ];
 
@@ -186,6 +190,7 @@ class LocalCrystalPlasticityModel : public Model
   static const char*        RHO_PROP;
 
   static const char*        SLIPS_PROP;
+  static const char*        ROTATION_PROP;
   static const char*        IPNODES_PROP;
   
 
@@ -314,6 +319,7 @@ class LocalCrystalPlasticityModel : public Model
 
   StringVector               slips_;
   int                        nslips_;
+  double                     rot_;
   double                     dtime_;
   String                     ipNGroup_;
 

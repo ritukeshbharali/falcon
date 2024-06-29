@@ -1,15 +1,19 @@
 
 /** @file LocalCrystalPlasticityModel.cpp
- *  @brief Local crystal visco-plasticity model
+ *  @brief Crystal visco-plasticity model without regularization.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
- *  Date: 08 April 2024
+ *  Date: 04 June 2024
  *
  *  Updates (when, what and who)
  *     - [14 June 2024] added functions to write stress,
  *       strain, and slip nodal and element tables. (RB)
+ *     - [25 June 2024] added user-defined rotation 
+ *       parameter operating on the slip plane and 
+ *       direction for flexibility. (RB)
  * 
  *  @todo Simplify some data structures, reduce loops.
+ *
  */
 
 /* Include jem and jive headers */
@@ -49,6 +53,7 @@ const char*  LocalCrystalPlasticityModel::SHAPE_PROP     = "shape";
 const char*  LocalCrystalPlasticityModel::MATERIAL_PROP  = "material";
 const char*  LocalCrystalPlasticityModel::DTIME_PROP     = "dtime";
 const char*  LocalCrystalPlasticityModel::SLIPS_PROP     = "slips";
+const char*  LocalCrystalPlasticityModel::ROTATION_PROP  = "rotation";
 const char*  LocalCrystalPlasticityModel::RHO_PROP       = "rho";
 const char*  LocalCrystalPlasticityModel::IPNODES_PROP   = "ipNodes";
 
@@ -67,6 +72,7 @@ LocalCrystalPlasticityModel::LocalCrystalPlasticityModel
 
     Super   ( name ),
     nslips_ ( 2 ),
+    rot_    ( 0.0 ),
     dtime_  ( 1.0 ),
     tstar_  ( 1.0 ),
     tauY_   ( 1.0 ),
@@ -271,6 +277,8 @@ void LocalCrystalPlasticityModel::configure
     const Properties&  globdat )
 
 {
+  MChain1     mc1;
+
   const String  context = getContext ();
 
   Properties  myProps  = props  .findProps ( myName_ );
@@ -282,6 +290,18 @@ void LocalCrystalPlasticityModel::configure
 
   D0_.resize( STRAIN_COUNTS[rank_], STRAIN_COUNTS[rank_] );
   D0_ = material_-> getStiffMat();
+
+  // Find rotation angle (in degrees) and convert to radian
+  
+  myProps.find ( rot_, ROTATION_PROP ); rot_ *= PI/180;
+
+  // Create a rotation matrix
+
+  Matrix R (3,3); R = 0.0;
+  R(0,0) = R(1,1) = cos(rot_);
+  R(0,1) = -sin(rot_);
+  R(1,0) =  sin(rot_);
+  R(2,2) =  1.0;
 
   for ( int i = 0; i < nslips_; i++ )
   {
@@ -314,6 +334,11 @@ void LocalCrystalPlasticityModel::configure
       "direction must be a vector size 3"
       );
     }
+
+    // Rotate slip plane and direction
+
+    plane = mc1.matmul( R, plane );
+    dir   = mc1.matmul( R, dir   );
 
     // Normalize plane and direction
 
@@ -372,6 +397,8 @@ void LocalCrystalPlasticityModel::getConfig ( const Properties& conf,
   }
 
   material_->getConfig ( matConf, globdat );
+
+  myConf. set ( ROTATION_PROP, rot_ );
 }
 
 
@@ -414,7 +441,7 @@ bool LocalCrystalPlasticityModel::takeAction
     return true;
   }
 
-  // compute the tangent stiffness matrix and internal force vector
+  // Compute the tangent stiffness matrix and internal force vector
 
   if ( action == Actions::GET_MATRIX0 )
   {
@@ -438,7 +465,7 @@ bool LocalCrystalPlasticityModel::takeAction
     return true;
   }
 
-  // compute mass matrix 
+  // Compute mass matrix 
 
   if ( action == Actions::GET_MATRIX2 )
   {
@@ -451,18 +478,15 @@ bool LocalCrystalPlasticityModel::takeAction
     return true;
   }
 
-  /** COMMIT: Requests an action when a computation step has converged.
-   *  Ideally, at this point, the material internal state variables
-   *  are swapped.
-  */ 
+  // Perform a commit once the solver converges and the solution
+  // is accepted. Ideally, at this point, state variables are swapped.
 
   if ( action == Actions::COMMIT )
   {
     return true;
   }
 
-  /** CHECK_COMMIT: Can used to discard the current step
-  */ 
+  // CHECK_COMMIT: Can used to discard the current step 
 
   if ( action == Actions::CHECK_COMMIT )
   {
