@@ -154,6 +154,7 @@ typedef ElementGroup           ElemGroup;
         n         = 2.0;               // Exponent
         tstar     = 1.0;               // Relaxation time
         tauY      = 200.e+06;          // Yield stress
+        selfH     = 100.;              // Self hardening
         plane     = [1.,1.,0.];        // Slip plane
         direction = [-1.,1.,0.];       // Slip direction
       };
@@ -163,6 +164,7 @@ typedef ElementGroup           ElemGroup;
         n         = 5.0;
         tstar     = 1.0;
         tauY      = 250.e+06;
+        selfH     = 100.;
         plane     = [0.,1.,0.];
         direction = [1.,0.,0.];
       };
@@ -172,6 +174,7 @@ typedef ElementGroup           ElemGroup;
         n         = 10.0;
         tstar     = 0.5;
         tauY      = 350.e+06;
+        selfH     = 100.;
         plane     = [1.,1.,0.];
         direction = [1.,-1.,0.];
       };
