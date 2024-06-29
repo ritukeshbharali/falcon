@@ -16,10 +16,12 @@
  * 
  *    model =
  *       {
- *        type     = "Neumann";
- *        elements = "TopElems";
- *        loads    = [0.0,-1.0e+04,0.0]; // size = dofs
- *        shape  =
+ *        type      = "Neumann";
+ *        elements  = "TopElems";     // Element set
+ *        loadInit  = [0.0];          // Initial load
+ *        loadIncr  = [1.e+02];       // Load increment
+ *        dof       = "dy";           // Loaded dof
+ *        shape  = 
  *         {
  *           type  = "BLine2";
  *           shapeFuncs  =
@@ -96,7 +98,9 @@ class NeumannModel : public Model
   typedef NeumannModel      Self;
 
   static const char*        TYPE_NAME;
-  static const char*        LOADS_PROP;
+  static const char*        LOAD_INIT_PROP;
+  static const char*        LOAD_INCR_PROP;
+  static const char*        DOFS_PROP;
   static const char*        SHAPE_PROP;
 
                             NeumannModel ();
@@ -131,10 +135,22 @@ class NeumannModel : public Model
 
  private:
 
+  void                      init_
+
+    ( const Properties&       globdat );
+
+  void                      advance_
+
+    ( const Properties&       globdat );
+
+  void                      commit_
+
+    ( const Properties&       params,
+      const Properties&       globdat );
+
   void                      getExtForce_
 
     ( const Vector&           fext,
-      double                  scale,
       const Properties&       globdat )      const;
 
  private:
@@ -148,8 +164,13 @@ class NeumannModel : public Model
   Ref<BShape>               shape_;
 
   Ref<XDofSpace>            dofs_;
-  StringVector              dofNames_;
-  IdxVector                 dofTypes_;
+  String                    loadDof_;
+  int                       dofType_;
 
-  Vector                    loads_;
+  double                    load_;
+  double                    load0_;
+  double                    loadInit_;
+  double                    loadIncr_;
+  
+
 };

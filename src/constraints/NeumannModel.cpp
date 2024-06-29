@@ -61,7 +61,9 @@ using jive::model::Actions;
 
 
 const char*  NeumannModel::TYPE_NAME          = "Neumann";
-const char*  NeumannModel::LOADS_PROP         = "loads";
+const char*  NeumannModel::LOAD_INIT_PROP     = "loadInit";
+const char*  NeumannModel::LOAD_INCR_PROP     = "loadIncr";
+const char*  NeumannModel::DOFS_PROP          = "dof";
 const char*  NeumannModel::SHAPE_PROP         = "shape";
 
 
@@ -76,7 +78,11 @@ NeumannModel::NeumannModel
     const Properties&  props,
     const Properties&  globdat ) :
 
-    Super ( name )
+    Super     ( name ),
+    load_     ( 0.0 ),
+    load0_    ( 0.0 ),
+    loadInit_ ( 0.0 ),
+    loadIncr_ ( 0.0 )
 
 {
   using jive::util::joinNames;
@@ -145,38 +151,32 @@ NeumannModel::NeumannModel
 
   dofs_  = XDofSpace::get ( nodes_.getData(), globdat );
 
-  // Get number of dofs from the XDofSpace
+  // Get the loaded dof and check whether it exists in DofSpace
 
-  const int          ndofs    = dofs_->typeCount   ();
-  const StringVector dofNames = dofs_->getTypeNames();
+  myProps.get ( loadDof_, DOFS_PROP );
 
-  dofNames_.resize ( ndofs );
-  dofTypes_.resize ( ndofs );
-  
-  dofNames_ = dofNames;
+  dofType_ = dofs_->findType ( loadDof_ );
 
-  for ( idx_t i = 0; i < ndofs; i++ )
-  {
-    dofTypes_[i] = dofs_->addType ( dofNames_[i] );
-  }
-
-  loads_   .resize ( ndofs );
-  loads_   = 0.0;
-
-  myProps.get ( loads_, LOADS_PROP );
-  myConf. set ( LOADS_PROP, loads_ );
-
-  if ( loads_.size() != ndofs )
+  if ( dofType_ < 0 )
   {
     throw IllegalInputException (
       context,
       String::format (
-        "loads has invalid size: %d (should be %d)",
-        loads_.size(),
-        ndofs
+        "dof: %s does not exist in DofSpace",
+        loadDof_
       )
     );
   }
+
+  myConf. set ( DOFS_PROP, loadDof_ );
+
+  // Get the load increment
+
+  myProps.find ( loadInit_, LOAD_INIT_PROP );
+  myConf. set  ( LOAD_INIT_PROP, loadInit_ );
+
+  myProps.find ( loadIncr_, LOAD_INCR_PROP );
+  myConf. set  ( LOAD_INCR_PROP, loadIncr_ );
 }
 
 
@@ -237,19 +237,79 @@ bool NeumannModel::takeAction
   if ( action == Actions::GET_EXT_VECTOR )
   {
     Vector fext;
-    double scale;
 
-    scale = 1.0;
-
-    params.find ( scale, ActionParams::SCALE_FACTOR );
     params.get  ( fext,  ActionParams::EXT_VECTOR   );
 
-    getExtForce_    ( fext, scale, globdat );
+    getExtForce_    ( fext, globdat );
+
+    return true;
+  }
+
+  // actions after accepting/committing to a solution
+
+  if ( action == Actions::COMMIT )
+  {
+    commit_ ( params, globdat );
+
+    return true;
+  }
+
+  // advance to next time step
+
+  if ( action == Actions::ADVANCE )
+  {
+    globdat.set ( "var.accepted", true );
+
+    advance_ ( globdat );
 
     return true;
   }
 
   return false;
+}
+
+
+//-----------------------------------------------------------------------
+//   init_
+//-----------------------------------------------------------------------
+
+
+void NeumannModel::init_ ( const Properties& globdat )
+{
+  // Update the Neumann load
+
+  load_ = load0_ = loadInit_;
+}
+
+
+//-----------------------------------------------------------------------
+//   advance_
+//-----------------------------------------------------------------------
+
+
+void NeumannModel::advance_ ( const Properties& globdat )
+{
+  // Update the total value of Neumann load
+
+  load_  = load0_ + loadIncr_;
+
+}
+
+
+//-----------------------------------------------------------------------
+//   commit_
+//-----------------------------------------------------------------------
+
+
+void NeumannModel::commit_
+
+  ( const Properties&  params,
+    const Properties&  globdat )
+
+{
+  // Update old Neumann load
+
+  load0_  = load_;
 }
 
 
@@ -260,7 +320,6 @@ bool NeumannModel::takeAction
 void NeumannModel::getExtForce_
 
   ( const Vector&       fext,
-    double              scale,
     const Properties&   globdat ) const
 
   {
@@ -272,30 +331,27 @@ void NeumannModel::getExtForce_
     const int elemCount = ielems.size         ();
     const int nodeCount = shape_->nodeCount   ();
     const int ipCount   = shape_->ipointCount ();
-    const int loadCount = dofTypes_.size      ();
-    const int dofCount  = nodeCount * loadCount ;
 
-    Vector    fe        ( dofCount          );
-    IdxVector idofs     ( dofCount          );
-    IdxVector inodes    ( nodeCount         );
-    Vector    weights   ( ipCount           );
-    Matrix    coords    ( rank_, nodeCount  );
-    Matrix    normals   ( rank_, ipCount    );
+    Vector    fe        ( nodeCount );
+    IdxVector idofs     ( nodeCount );
+    IdxVector inodes    ( nodeCount );
+    Vector    weights   ( ipCount   );
+    Matrix    coords    ( rank_, nodeCount );
+    Matrix    normals   ( rank_, ipCount   );
 
     // Loop over surface elements
 
     for ( idx_t ie = 0; ie < elemCount; ie++ )
-    {
-      
+    {  
       // Get the global element index.
 
-      int ielem = ielems[ie];
+      const int ielem = ielems[ie];
 
       // Get the element coordinates and DOFs.
 
       elems_. getElemNodes  ( inodes, ielem  );
       nodes_. getSomeCoords ( coords, inodes );
-      dofs_-> getDofIndices ( idofs,  inodes, dofTypes_ );
+      dofs_-> getDofIndices ( idofs,  inodes, dofType_ );
       shape_->getNormals    ( normals, weights, coords );
 
       // Initialize the element load vector
@@ -306,15 +362,7 @@ void NeumannModel::getExtForce_
     
       for ( int ip = 0; ip < ipCount; ip++ )
       {
-
-        // Loop over the load dofs
-
-        for ( int ldof = 0; ldof < loadCount; ldof++ )
-        {
-          double load = scale * weights[ip] * loads_[ldof];
-
-          fe[slice(ldof,END,loadCount)] += load * sfuncs(ALL,ip);
-        }
+        fe += weights[ip] * load_ * sfuncs(ALL,ip);
       }
 
       // assemble into the global external force vector
@@ -330,7 +378,7 @@ void NeumannModel::getExtForce_
 //=======================================================================
 
 //-----------------------------------------------------------------------
-//   newNeumannModel
+//   NeumannModel
 //-----------------------------------------------------------------------
 
 
