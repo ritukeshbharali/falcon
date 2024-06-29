@@ -19,11 +19,7 @@
  *        folder /opt/intel/oneapi). This sets up the
  *        necessary environment MKLROOT, prior to 
  *        compiling the executable and running the 
- *        program.
- *
- *        * IMPORTANT * Set sortColumns = 1 for higher
- *        order elements.
- * 
+ *        program. 
  *
  *  Updates (when, what and who)
  *     - [04 May 2022] Throw error for wrong matrix type,
@@ -41,6 +37,11 @@
  *       debugging. Changed iparm[1] from Metis Nested
  *       Dissection (2) to Parallel Nested Dissection (3)
  *       It decreases the computational time. (RB)
+ * 
+ *     - [29 June 2024] Added runtime configuration
+ *       options for matrix reordering, scaling, and
+ *       parallel factorization. Also, sortColumns
+ *       and matrix checker are now boolean inputs. (RB)
  *       
  */
 
@@ -58,6 +59,8 @@
 #include <mkl_pardiso.h>
 #include <mkl_service.h>
 
+using jem::util::Dictionary;
+using jem::util::HashDictionary;
 
 JIVE_BEGIN_PACKAGE( solver )
 
@@ -82,10 +85,30 @@ extern "C" {
 //-----------------------------------------------------------------------
 
 /** @brief 
- *  The PardisoSolver class implements a wrapper for using the Pardiso
- *  direct solver from the Intel MKL library. 
+ *  The class \c PardisoSolver implements a wrapper (interface) to the
+ *  shared-memory multiprocessing parallel direct sparse solver known
+ *  as the Intel® oneAPI Math Kernel Library PARDISO solver.
  * 
  *  @note Does not work with MPI.
+ * 
+ *  Below is an example how the solver is defined in an input file:
+ * 
+ *  \code
+ *  solver  =
+      {
+        type            = "Pardiso";        // solver name
+        lenient         = false;            // lenient mode off
+        precision       = 1.00000e-10;      // solver precision
+        mtype           = 11;               // matrix type
+        numThreads      = 4;                // number of openMP threads
+        msglvl          = 0;                // debug mode off
+        sortColumns     = true;             // sort columns based on values
+        matrixChecker   = false;            // matrix checker
+        matrixOrdering  = "amd";            // matrix ordering (amd, metis, nd)
+        matrixScaling   = false;            // matrix weighted scaling
+        parFactorize    = true;             // parallel factorization
+      };
+ *  \endcode
  */ 
 
 class PardisoSolver : public DirectSolver
@@ -100,10 +123,13 @@ class PardisoSolver : public DirectSolver
   static const char*        REORDER_METHODS[3];
 
   static const char*        MATRIX_TYPE;
-  static const char*        PRINT_INFO;
+  static const char*        MSG_LEVEL;
   static const char*        NUM_THREADS;
   static const char*        SORT_COLUMNS;
-  static const char*        MATRIX_CHECKER;  
+  static const char*        MATRIX_CHECKER;
+  static const char*        MATRIX_SCALING;
+  static const char*        MATRIX_ORDERING;
+  static const char*        PARALLEL_FACTORIZE;
 
   enum                      Option
   {
@@ -278,8 +304,11 @@ class PardisoSolver : public DirectSolver
   int                       mtype_;
   int                       phase_;
   int                       msglvl_;
-  int                       sortCols_;
-  int                       matrixChk_;
+  bool                      sortCols_;
+  bool                      matrixChk_;
+  int                       ordering_;
+  bool                      scaling_;
+  bool                      parfact_;
 
   int                       idum_;
   double                    ddum_;

@@ -19,11 +19,7 @@
  *        folder /opt/intel/oneapi). This sets up the
  *        necessary environment MKLROOT, prior to 
  *        compiling the executable and running the 
- *        program.
- *
- *        * IMPORTANT * Set sortColumns = 1 for higher
- *        order elements.
- * 
+ *        program. 
  *
  *  Updates (when, what and who)
  *     - [04 May 2022] Throw error for wrong matrix type,
@@ -41,6 +37,11 @@
  *       debugging. Changed iparm[1] from Metis Nested
  *       Dissection (2) to Parallel Nested Dissection (3)
  *       It decreases the computational time. (RB)
+ * 
+ *     - [29 June 2024] Added runtime configuration
+ *       options for matrix reordering, scaling, and
+ *       parallel factorization. Also, sortColumns
+ *       and matrix checker are now boolean inputs. (RB)
  *       
  */
 
@@ -49,6 +50,7 @@
 /* Include jem and jive headers */
 
 #include <cmath>
+#include <map>
 #include <vector>
 #include <algorithm>
 #include <jem/base/assert.h>
@@ -106,10 +108,13 @@ const double  PardisoSolver::PIVOT_THRESHOLD    = 0.1;
 const int     PardisoSolver::MAX_ITER           = 10;
 
 const char*   PardisoSolver::MATRIX_TYPE        = "mtype";
-const char*   PardisoSolver::PRINT_INFO         = "msglvl";
+const char*   PardisoSolver::MSG_LEVEL          = "msglvl";
 const char*   PardisoSolver::NUM_THREADS        = "numThreads";
 const char*   PardisoSolver::SORT_COLUMNS       = "sortColumns";
 const char*   PardisoSolver::MATRIX_CHECKER     = "matrixChecker";
+const char*   PardisoSolver::MATRIX_SCALING     = "matrixScaling";
+const char*   PardisoSolver::MATRIX_ORDERING    = "matrixOrdering";
+const char*   PardisoSolver::PARALLEL_FACTORIZE = "parFactorize";
 
 const char*   PardisoSolver::REORDER_METHODS[3] =
 {
@@ -187,6 +192,9 @@ PardisoSolver::PardisoSolver
   events_    = ~0x0;
   started_   = 0;
 
+  ordering_  = 0;
+  scaling_   = false;
+  parfact_   = false;
 
   /* Initialize the Pardiso solver  */
 
@@ -251,25 +259,25 @@ PardisoSolver::PardisoSolver
    * ------------------------------------------------------------------------------------------------------------------ 
    */
 
-  iparm_[0]   = 1;            // User-defined 
-  iparm_[1]   = 3;            // OpenMP parallel nested dissection  
-  iparm_[9]   = 13;           // Default, 13 for unsymm, change to 8 for sym indef
-  iparm_[10]  = 1;            // Default, 1 for unsymm, change to 0 for sym indef  
-  iparm_[11]  = 0;             // Ax = b, no conjugate/transpose
-  iparm_[12]  = 1;            // Enable weighted matching
-  iparm_[23]  = 10;           // Parallel factorization for unsym
-  iparm_[34]  = 1;            // Zero based indexing
+  iparm_[0]   = 1;               // User-defined 
+  iparm_[1]   = ordering_;       // amd
+  iparm_[9]   = 13;              // Default, 13 for unsymm, change to 8 for sym indef
+  iparm_[10]  = 1;               // Default, 1 for unsymm, change to 0 for sym indef  
+  iparm_[11]  = 0;               // Ax = b, no conjugate/transpose
+  iparm_[12]  = (int) scaling_;  // Enable weighted matching
+  iparm_[23]  = (int) parfact_;  // Parallel factorization for unsym
+  iparm_[34]  = 1;               // Zero based indexing
 
-  maxfct_     = 1;            // Maximal number of factors in memory
-  mnum_       = 1;            // The number of matrix (from 1 to maxfct) to solve 
-  mtype_      = 11;           // Real and non-symmetric
-  nrhs_       = 1;            // Number of Right-hand side vectors
+  maxfct_     = 1;               // Maximal number of factors in memory
+  mnum_       = 1;               // The number of matrix (from 1 to maxfct) to solve 
+  mtype_      = 11;              // Real and non-symmetric
+  nrhs_       = 1;               // Number of Right-hand side vectors
 
-  msglvl_     = 0;            // Do not print statistical information
-  sortCols_   = 0;            // Switch off sorting columns for each row
-  matrixChk_  = 0;            // Switch off matrix checker 
-  errorFlag_  = 0;            // Initialize error flag to zero
-  nThreads_   = 1;            // Default, use one thread
+  msglvl_     = 0;               // Do not print statistical information
+  sortCols_   = true;            // Sorting columns for each row
+  matrixChk_  = false;           // Switch off matrix checker 
+  errorFlag_  = 0;               // Initialize error flag to zero
+  nThreads_   = 1;               // Default, use one thread
 
 
   /* -------------------------------------------------------------------- */
@@ -454,9 +462,11 @@ void PardisoSolver::improve
 
     phase_ = 33;
 
-    pardiso (pt_, &maxfct_, &mnum_, &mtype_, &phase_,
-             &n_, values_.addr(), offsets_.addr(), indices_.addr(), 
-             &idum_, &nrhs_, iparm_, &msglvl_, r.addr(), du.addr(), &errorFlag_);
+    pardiso ( pt_, &maxfct_, &mnum_, &mtype_, &phase_,
+              &n_, values_.addr(), offsets_.addr(), 
+              indices_.addr(), &idum_, &nrhs_, iparm_, 
+              &msglvl_, r.addr(), du.addr(), &errorFlag_
+            );
 
     if ( errorFlag_ != 0 )
     {
@@ -575,6 +585,13 @@ void PardisoSolver::configure ( const Properties& props )
 
   Super::configure ( props );
 
+  String ordering ( "amd" );
+
+  std::map<String, int> ordmap{ {"amd",   0}, 
+                                {"metis", 1}, 
+                                {"nd",    2}
+                              }; 
+
   if ( props.contains( myName_ ) )
   {
     Properties  myProps = props.findProps ( myName_ );
@@ -616,11 +633,14 @@ void PardisoSolver::configure ( const Properties& props )
     findBool ( options_, PRINT_PIVOTS,
                myProps,  PropNames::PRINT_PIVOTS );
 
-    myProps.find ( mtype_,     MATRIX_TYPE     );
-    myProps.find ( nThreads_,  NUM_THREADS     );
-    myProps.find ( msglvl_,    PRINT_INFO      );
-    myProps.find ( sortCols_,  SORT_COLUMNS    );
-    myProps.find ( matrixChk_, MATRIX_CHECKER  );
+    myProps.find ( mtype_,     MATRIX_TYPE        );
+    myProps.find ( nThreads_,  NUM_THREADS        );
+    myProps.find ( msglvl_,    MSG_LEVEL          );
+    myProps.find ( sortCols_,  SORT_COLUMNS       );
+    myProps.find ( matrixChk_, MATRIX_CHECKER     );
+    myProps.find ( ordering,   MATRIX_ORDERING    );
+    myProps.find ( scaling_,   MATRIX_SCALING     );
+    myProps.find ( parfact_,   PARALLEL_FACTORIZE );
 
     using std::vector;
 
@@ -633,10 +653,16 @@ void PardisoSolver::configure ( const Properties& props )
       throw jem::IllegalInputException (
       getContext (),
       getContext () + " Wrong matrix type: Choose 1,2,-2,3,4,-4,6,11,13!"
-    );
-        
+      );  
     }
   }
+
+  ordering_ = ordmap[ordering.toLower()];
+
+  iparm_[1]   = ordering_;       
+  iparm_[12]  = (int) scaling_;  
+  iparm_[23]  = (int) parfact_;  
+
 }
 
 
@@ -662,11 +688,14 @@ void PardisoSolver::getConfig ( const Properties& conf ) const
   setBool    ( myConf,   PropNames::PRINT_PIVOTS,
                options_, PRINT_PIVOTS );
 
-  myConf.set ( MATRIX_TYPE,    mtype_     );
-  myConf.set ( NUM_THREADS,    nThreads_  );
-  myConf.set ( PRINT_INFO,     msglvl_    );
-  myConf.set ( SORT_COLUMNS,   sortCols_  );
-  myConf.set ( MATRIX_CHECKER, matrixChk_ );
+  myConf.set ( MATRIX_TYPE,        mtype_     );
+  myConf.set ( NUM_THREADS,        nThreads_  );
+  myConf.set ( MSG_LEVEL,          msglvl_    );
+  myConf.set ( SORT_COLUMNS,       sortCols_  );
+  myConf.set ( MATRIX_CHECKER,     matrixChk_ );
+  myConf.set ( MATRIX_ORDERING,    ordering_  );
+  myConf.set ( MATRIX_SCALING,     scaling_   );
+  myConf.set ( PARALLEL_FACTORIZE, parfact_   );
 
   // Switch off Intel dynamic parallelism and set threads
 
@@ -978,7 +1007,7 @@ void PardisoSolver::update_ ()
 
   /* Indices in each row sorted in increasing order */
 
-  if ( sortCols_ == 1 )
+  if ( sortCols_ )
   {
     Vector tmp ( n_ );
 
@@ -1006,9 +1035,11 @@ void PardisoSolver::update_ ()
 
   phase_ = 11;
 
-  pardiso (  pt_, &maxfct_, &mnum_, &mtype_, &phase_,
-             &n_, values_.addr(), offsets_.addr(), indices_.addr(), 
-             &idum_, &nrhs_, iparm_, &msglvl_, &ddum_, &ddum_, &errorFlag_ );
+  pardiso ( pt_, &maxfct_, &mnum_, &mtype_, &phase_,
+            &n_, values_.addr(), offsets_.addr(), 
+            indices_.addr(), &idum_, &nrhs_, iparm_,
+            &msglvl_, &ddum_, &ddum_, &errorFlag_ 
+          );
 
   if ( errorFlag_ != 0 )
   {
@@ -1023,9 +1054,11 @@ void PardisoSolver::update_ ()
 
   phase_ = 22;
 
-  pardiso (  pt_, &maxfct_, &mnum_, &mtype_, &phase_,
-             &n_, values_.addr(), offsets_.addr(), indices_.addr(), 
-             &idum_, &nrhs_, iparm_, &msglvl_, &ddum_, &ddum_, &errorFlag_ );
+  pardiso ( pt_, &maxfct_, &mnum_, &mtype_, &phase_,
+            &n_, values_.addr(), offsets_.addr(), 
+            indices_.addr(), &idum_, &nrhs_, iparm_, 
+            &msglvl_, &ddum_, &ddum_, &errorFlag_ 
+          );
 
   if ( errorFlag_ != 0 )
   {
@@ -1101,15 +1134,13 @@ void PardisoSolver::setEvents_ ( int events )
 
 void PardisoSolver::freePardisoMemory_ ()
 {
-
   phase_ = -1;
 
-  pardiso (  pt_, &maxfct_, &mnum_, &mtype_, &phase_,
-             &n_, values_.addr(), offsets_.addr(), indices_.addr(), 
-             &idum_, &nrhs_, iparm_, &msglvl_, &ddum_, &ddum_, &errorFlag_ );
-
-
-
+  pardiso ( pt_, &maxfct_, &mnum_, &mtype_, &phase_,
+            &n_, values_.addr(), offsets_.addr(), 
+            indices_.addr(), &idum_, &nrhs_, iparm_, 
+            &msglvl_, &ddum_, &ddum_, &errorFlag_ 
+          );
 }
 
 
