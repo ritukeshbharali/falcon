@@ -1,14 +1,23 @@
+/* 
+  pm01    : Terzaghi consolidation
+  FE model: Saturated Porous
+  Material: Hooke
+  Loading : Neumann
+  Implicit: Nonlin
+  Solver  : Skyline
+*/
+
 log =
 {
-  pattern = "*.info";
-  file    = "-$(CASE_NAME).log";
+  pattern = "*.debug";
+  file    = "$(CASE_NAME).log";
 };
 
 control = 
 {
   fgMode   = false;
   pause    = 0.;
-  runWhile = "i < 10";
+  runWhile = "i < 2";
 };
 
 input =
@@ -46,26 +55,25 @@ model = "Matrix"
         rho      = 1.0;
       };
 
-      intrin_perm   = 1.0e-14;
-      fluid_visc    = 0.0089;
-      solid_stiff   = 1.0e+10;
-      fluid_stiff   = 2.0e+09;
+      intrinPerm    = 1.0e-14;
+      fluidVisc     = 0.0089;
+      solidStiff    = 1.0e+10;
+      fluidStiff    = 2.0e+09;
       porosity      = 0.375;
-      biot_coeff    = 1.0;
+      biotCoeff     = 1.0;
       dtime         = 9.1225;
     };
     
 
     force =  "LoadScale"
     {
-       // time in seconds
-       //scaleFunc = "exp(-time/1e-4)";
-
        model =
        {
          type     = "Neumann";
          elements = "TopElems";
-         loads    = [0.0,-1.0e+04,0.0];
+         loadInit  = -1.0e+4;
+         loadIncr  = 0.0;
+         dof       = "dy";
          shape  =
           {
             type  = "BLine3";
@@ -83,7 +91,7 @@ model = "Matrix"
 
 extraModules =
 {
-  modules = ["solver","view","vtk"];
+  modules = ["solver","view"];
   
   solver = 
   {
@@ -93,11 +101,8 @@ extraModules =
 
       solver =
       { 
-        type = "Pardiso";
-        lenient = true;
-        numThreads  = 4;
-        msglvl = 0;
-        sortColumns = 1;
+        type        = "Skyline";
+        useThreads  = true;
       };
   };
 
@@ -149,13 +154,4 @@ extraModules =
     //updateWhen = "accepted";
     
   };
-
-  vtk = "Paraview"
-    {
-       fileName      = "$(CASE_NAME)_out";
-       elements      = "DomainElems";
-       printInterval = 1;
-       pointData     = ["stress"];
-    };
-
 };

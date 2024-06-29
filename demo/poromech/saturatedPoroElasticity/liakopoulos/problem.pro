@@ -1,3 +1,12 @@
+/* 
+  pm02    : Liakopoulos experiment
+  FE model: Two Phase Unsaturated Porous
+  Material: Hooke
+  Loading : Neumann
+  Implicit: Nonlin
+  Solver  : Skyline
+*/
+
 log =
 {
   pattern = "*.info";
@@ -57,14 +66,13 @@ model = "Matrix"
 
       retention.type = "Liakopoulos";
 
-      intrin_perm   = 4.5e-13;
-      fluid_visc    = 0.001;
-      solid_stiff   = 1.0e+10;
-      fluid_stiff   = 2.2e+09;
+      intrinPerm    = 4.5e-13;
+      fluidVisc     = 0.001;
+      solidStiff    = 1.0e+10;
+      fluidStiff    = 2.2e+09;
       porosity      = 0.2975;
-      biot_coeff    = 1.0;
+      biotCoeff     = 1.0;
       dtime         = 60.0;
-      stabilization = false;
 
       rho_solid     = 2000.;
       rho_fluid     = 1000.;
@@ -73,27 +81,13 @@ model = "Matrix"
 
     force =  "LoadScale"
     {
-       scaleFunc = 
-       "
-       save
-       f_max   = 1.0
-       ,
-       t_max   = 5
-       let
-       t       = i
-       return
-       if ( t < t_max )
-       f_max
-       else
-       0.0
-       endif
-       ";
-
        model =
        {
          type     = "Neumann";
          elements = "TopElems";
-         loads    = [0.0,0.0,-1.0e-4];
+         loadInit  = -1.0e+4;
+         loadIncr  = 0.0;
+         dof       = "dp";
          shape  =
           {
             type  = "BLine3";
@@ -104,25 +98,25 @@ model = "Matrix"
             intScheme = "Gauss2";
           };
        };
-    };  
+    };
 
   };
 };
 
 extraModules =
 {
-  modules = ["solver","view","vtk"];
+  modules = ["solver","view"];
   
   solver = 
   {
       type      = "Nonlin";
       precision = 1.0e-4;    
-      maxIter   = 100;
+      maxIter   = 5;
 
       solver =
       { 
-        type = "Pardiso";
-        sortColumns = 1;
+        type        = "Skyline";
+        useThreads  = true;
       };
   };
 
@@ -175,12 +169,14 @@ extraModules =
     
   };
 
-  vtk = "Paraview"
+  vtk = "vtkWriter"
     {
-       fileName      = "$(CASE_NAME)_out";
-       elements      = "DomainElems";
-       printInterval = 1;
-       pointData      = ["stress"];
+       fileName   = "$(CASE_NAME)_out";
+       elements = "DomainElems";
+       interval = 1;
+       data     = ["stress"];
+       dataType = "nodes";
+
     };
 
 };
