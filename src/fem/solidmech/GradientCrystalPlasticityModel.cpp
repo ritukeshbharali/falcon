@@ -11,6 +11,9 @@
  *       integration point nodes. (RB)
  *     - [11 June 2024] added functions to write stress,
  *       strain, and tau nodal and element tables. (RB)
+ *     - [25 June 2024] added user-defined rotation 
+ *       parameter operating on the slip plane and 
+ *       direction for flexibility. (RB)
  * 
  *  @todo Simplify some data structures, reduce loops.
  *
@@ -53,6 +56,7 @@ const char*  GradientCrystalPlasticityModel::SHAPE_PROP     = "shape";
 const char*  GradientCrystalPlasticityModel::MATERIAL_PROP  = "material";
 const char*  GradientCrystalPlasticityModel::DTIME_PROP     = "dtime";
 const char*  GradientCrystalPlasticityModel::SLIPS_PROP     = "slips";
+const char*  GradientCrystalPlasticityModel::ROTATION_PROP  = "rotation";
 const char*  GradientCrystalPlasticityModel::RHO_PROP       = "rho";
 const char*  GradientCrystalPlasticityModel::IPNODES_PROP   = "ipNodes";
 
@@ -71,6 +75,7 @@ GradientCrystalPlasticityModel::GradientCrystalPlasticityModel
 
     Super   ( name ),
     nslips_ ( 2 ),
+    rot_    ( 0.0 ),
     dtime_  ( 1.0 ),
     tstar_  ( 1.0 ),
     tauY_   ( 1.0 ),
@@ -258,6 +263,7 @@ GradientCrystalPlasticityModel::GradientCrystalPlasticityModel
   tstar_.resize ( nslips_ );
   tauY_ .resize ( nslips_ );
   n_    .resize ( nslips_ );
+  selfH_.resize ( nslips_ );
 
   // Allocate for slip - direction dyadics
   
@@ -284,17 +290,31 @@ void GradientCrystalPlasticityModel::configure
     const Properties&  globdat )
 
 {
+  MChain1     mc1;
+
   const String  context = getContext ();
 
   Properties  myProps  = props  .findProps ( myName_ );
   Properties  matProps = myProps.findProps ( MATERIAL_PROP );
 
-  myProps.get ( dtime_, DTIME_PROP );
+  myProps.get  ( dtime_, DTIME_PROP );
 
   material_->configure ( matProps, globdat );
 
   D0_.resize( STRAIN_COUNTS[rank_], STRAIN_COUNTS[rank_] );
   D0_ = material_-> getStiffMat();
+
+  // Find rotation angle (in degrees) and convert to radian
+  
+  myProps.find ( rot_, ROTATION_PROP ); rot_ *= PI/180;
+
+  // Create a rotation matrix
+
+  Matrix R (3,3); R = 0.0;
+  R(0,0) = R(1,1) = cos(rot_);
+  R(0,1) = -sin(rot_);
+  R(1,0) =  sin(rot_);
+  R(2,2) =  1.0;
 
   for ( int i = 0; i < nslips_; i++ )
   {
@@ -303,8 +323,9 @@ void GradientCrystalPlasticityModel::configure
     Properties mySlipProps = myProps.getProps ( slipName );
 
     mySlipProps.get ( tstar_[i], "tstar" );
-    mySlipProps.get ( tauY_[i],  "tauY" );
-    mySlipProps.get ( n_[i],     "n" );
+    mySlipProps.get ( tauY_[i],  "tauY"  );
+    mySlipProps.get ( n_[i],     "n"     );
+    mySlipProps.get ( selfH_[i], "selfH" );
 
     Vector plane ( 3 );    // 3D
     Vector dir   ( 3 );    // 3D
@@ -328,6 +349,11 @@ void GradientCrystalPlasticityModel::configure
       );
     }
 
+    // Rotate slip plane and direction
+
+    plane = mc1.matmul( R, plane );
+    dir   = mc1.matmul( R, dir   );
+
     // Normalize plane and direction
 
     double fac1 = 1.0/jem::numeric::norm2( plane );
@@ -341,7 +367,6 @@ void GradientCrystalPlasticityModel::configure
     Matrix tmp = tensorUtils::otimes( plane, dir );
     sm_[i]     = tensorUtils::tensor2voigtStrain( tmp, 
                                 STRAIN_COUNTS[rank_] );
-
   }
 
   // Compute some more coefficients
@@ -380,11 +405,14 @@ void GradientCrystalPlasticityModel::getConfig ( const Properties& conf,
     Properties mySlipConf = myConf.makeProps ( slipName );
 
     mySlipConf.set ( "tstar", tstar_[i] );
-    mySlipConf.set ( "tauY",  tauY_[i] );
-    mySlipConf.set ( "n",     n_[i] );
+    mySlipConf.set ( "tauY",  tauY_[i]  );
+    mySlipConf.set ( "n",     n_[i]     );
+    mySlipConf.set ( "selfH", selfH_[i] );
   }
 
   material_->getConfig ( matConf, globdat );
+
+  myConf. set ( ROTATION_PROP, rot_ );
 }
 
 
@@ -820,7 +848,7 @@ void GradientCrystalPlasticityModel::getMatrix_
         elemForce2[islip] += wip * ( Nip * (- dot(Dsm_[islip],strain)
                                             + Esm_(islip,islip) * ipSlip[islip]
                                             + tau[islip][ip] ) + 
-                                    1.e+3 * mc1.matmul (bet, gradSlip[islip]) );
+                                    selfH_[islip] * mc1.matmul (bet, gradSlip[islip]) );
 
         elemForce3[islip]  = wip * ( ( ipSlip[islip] - ipSlip0[islip] )
                                    - dtime_ * Phi[islip]  
@@ -828,7 +856,7 @@ void GradientCrystalPlasticityModel::getMatrix_
 
         select ( force, tauDofs[islip] ) = elemForce3[islip];
 
-        // Note: Esm_ cross hardening is not considered here!
+        // Note: cross hardening is not considered here!
       }
 
       // -----------------------------------------
@@ -849,7 +877,7 @@ void GradientCrystalPlasticityModel::getMatrix_
 
         elemMat21[islip] -= wip * mc2.matmul ( matmul (Nip, Dsm_[islip] ), bd );
         elemMat22[islip] += wip * (  matmul( Nip, Nip ) * Esm_(islip,islip)
-                               + mc2.matmul ( bet, be ) * 1.e+3 );
+                               + mc2.matmul ( bet, be ) * selfH_[islip] );
         elemMat23[islip](ALL,ip) += wip * (N ( ALL, ip ));
 
         // Tau row
@@ -962,7 +990,7 @@ void GradientCrystalPlasticityModel::getMatrix2_
 
     for ( int ip = 0; ip < ipCount; ip++ )
     {
-      // compute matrix of shpae function N       
+      // compute matrix of shape function N       
 
       getShapeFuncs_ ( N, sfuncs(ALL,ip) );
 

@@ -11,6 +11,9 @@
  *       integration point nodes. (RB)
  *     - [11 June 2024] added functions to write stress,
  *       strain, and tau nodal and element tables. (RB)
+ *     - [25 June 2024] added user-defined rotation 
+ *       parameter operating on the slip plane and 
+ *       direction for flexibility. (RB)
  * 
  *  @todo Simplify some data structures, reduce loops.
  *
@@ -141,7 +144,8 @@ typedef ElementGroup           ElemGroup;
         rho      = 0.0;                // Material density
       };
 
-      dtime  = 1.0;                    // Time step-size
+      rotation = 45.0;                 // Slip system rotation
+      dtime    = 1.0;                  // Time step-size
 
       slips = [ "slip0", "slip1", "slip2" ];
 
@@ -190,6 +194,7 @@ class GradientCrystalPlasticityModel : public Model
   static const char*        RHO_PROP;
 
   static const char*        SLIPS_PROP;
+  static const char*        ROTATION_PROP;
   static const char*        IPNODES_PROP;
   
 
@@ -319,12 +324,14 @@ class GradientCrystalPlasticityModel : public Model
 
   StringVector               slips_;
   int                        nslips_;
+  double                     rot_;
   double                     dtime_;
   String                     ipNGroup_;
 
   Vector                     tstar_;
   Vector                     tauY_;
   Vector                     n_;
+  Vector                     selfH_;
   
   double                     rho_;
 
