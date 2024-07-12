@@ -293,6 +293,17 @@ class GradientCrystalPlasticityModel : public Model
       const Vector&           weights,
       const Vector&           state   );
 
+  void                      getElemSlip_
+
+    ( XTable&                 table,
+      const Vector&           weights,
+      const Vector&           state   );
+
+  void                      getElemWIP_
+
+    ( XTable&                 table,
+      const Vector&           weights );
+
   void                      checkCommit_
 
     ( const Properties&       params );  

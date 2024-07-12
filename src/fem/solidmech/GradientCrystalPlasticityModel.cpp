@@ -1142,6 +1142,27 @@ bool GradientCrystalPlasticityModel::getTable_
     return true;
   }
 
+  // Element slip
+  if ( name == "slip" && 
+       table->getRowItems() == elems_.getData() )
+  {
+    Vector  state;
+    StateVector::get ( state, dofs_, globdat  );
+
+    getElemSlip_ ( *table, weights, state );
+
+    return true;
+  }
+
+  // Element weight of integration points
+  if ( name == "wip" && 
+       table->getRowItems() == elems_.getData() )
+  {
+    getElemWIP_ ( *table, weights );
+
+    return true;
+  }
+
   // 
   if ( name == "xoutTable" )
   {
@@ -1827,6 +1848,146 @@ void GradientCrystalPlasticityModel::getElemTau_
   // Add the stresses to the table.
 
   table.setBlock ( ielems, jcols, elTau );
+}
+
+
+//-----------------------------------------------------------------------
+//   getElemSlip_
+//-----------------------------------------------------------------------
+
+
+void GradientCrystalPlasticityModel::getElemSlip_
+
+  ( XTable&        table,
+    const Vector&  weights,
+    const Vector&  state )
+
+{
+  IdxVector  ielems     = egroup_.getIndices  ();
+
+  const int  elemCount  = ielems.size         ();
+  const int  nodeCount  = shape_->nodeCount   ();
+  const int  ipCount    = shape_->ipointCount ();
+
+  // Get the shape function
+
+  Matrix N  = shape_->getShapeFunctions ();
+
+  Matrix     elSlip     ( elemCount, nslips_ );
+
+  vector<Vector> slip   ( nslips_ );
+
+  IdxVector  inodes     ( nodeCount );
+  IdxVector  jcols      ( nslips_   );
+
+  vector<IdxVector> slipDofs ( nslips_ );
+
+  for ( int islip = 0; islip < nslips_; islip++ )
+  {
+    slip[islip]     .resize( nodeCount );
+    slipDofs[islip] .resize( nodeCount );
+
+    String slipName = "slip" + String(islip);
+    jcols[islip]   = table.addColumn ( slipName );
+  }
+
+  elSlip  = 0.0;
+
+  // Iterate over all elements assigned to this model.
+
+  for ( int ie = 0; ie < elemCount; ie++ )
+  {
+    const int ielem = ielems[ie];
+
+    elems_.getElemNodes ( inodes, ielem );
+
+    for ( int islip = 0; islip < nslips_; islip++ )
+    {
+      dofs_->getDofIndices ( slipDofs[islip], inodes, 
+                                  slipTypes_[islip] );
+
+      slip[islip]   = select ( state, slipDofs[islip] );
+    }    
+
+    // Iterate over the integration points.
+
+    for ( int ip = 0; ip < ipCount; ip++ )
+    {
+      // Compute integration point slips
+
+      const Vector Nip    = N ( ALL, ip );
+
+      for ( int islip = 0; islip < nslips_; islip++ )
+      {
+        // Get integration point slip
+
+        double ipSlip = dot ( Nip, slip[islip] );
+
+        elSlip(ie,islip) += ipSlip/ipCount;
+      }
+    }
+  }
+
+  // Add the stresses to the table.
+
+  table.addBlock ( ielems, jcols, elSlip );
+}
+
+
+//-----------------------------------------------------------------------
+//   getElemWIP_
+//-----------------------------------------------------------------------
+
+
+void GradientCrystalPlasticityModel::getElemWIP_
+
+  ( XTable&        table,
+    const Vector&  weights )
+
+{
+  IdxVector  ielems     = egroup_.getIndices  ();
+
+  const int  elemCount  = ielems.size         ();
+  const int  nodeCount  = shape_->nodeCount   ();
+  const int  ipCount    = shape_->ipointCount ();
+
+  // Allocate inodes, coords, ipWeights, wip
+  IdxVector   inodes     ( nodeCount );
+  Matrix      coords     ( rank_, nodeCount );
+  Vector      ipWeights  ( ipCount   );
+  double      wip;
+
+  Matrix     elWIP     ( elemCount, 1 );
+
+  IdxVector  jcols      ( 1 );
+
+  jcols[0]   = table.addColumn ( "wip" );
+
+  elWIP  = 0.0;
+
+  // Iterate over all elements assigned to this model.
+
+  for ( int ie = 0; ie < elemCount; ie++ )
+  {
+    const int ielem = ielems[ie];
+
+    elems_.getElemNodes ( inodes, ielem );
+    nodes_.getSomeCoords ( coords,   inodes );
+
+    // Get the element ip weights
+    shape_-> getIntegrationWeights( ipWeights, coords );
+
+    // Iterate over the integration points.
+
+    for ( int ip = 0; ip < ipCount; ip++ )
+    {
+      elWIP(ie,0) += ipWeights[ip]/ipCount;
+    }
+  }
+
+  // Add the stresses to the table.
+
+  table.addBlock ( ielems, jcols, elWIP );
 }
 
 
