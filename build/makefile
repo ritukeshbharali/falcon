@@ -6,6 +6,7 @@ subdirs = ../src/constraints \
           $(wildcard ../src/fem/*/) \
           $(wildcard ../src/io/*/) \
           ../src/materials \
+          $(wildcard ../src/rom/*/) \
           $(wildcard ../src/solvers/*/) \
           ../src/steppers \
           ../src/util

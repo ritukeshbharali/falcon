@@ -39,6 +39,8 @@
 #include "fem/biomech/FalconBioMechModels.h"      // Bio Mechanics
 #include "io/models/FalconIOModels.h"             // Input-Output
 
+#include "rom/solidmech/FalconSolidMechROMs.h"    // Solid Mechanics
+
 /* Include Falcon modules */
 
 #include "io/modules/FalconIOModules.h"             // Input-Output
@@ -102,6 +104,7 @@ Ref<Module> mainModule ()
   declareFalconPoroMechModels     ();
   declareFalconBioMechModels      ();
   declareFalconIOModels           ();
+  declareFalconSolidMechROMs      ();
 
   /* Declare Falcon Modules */
 
