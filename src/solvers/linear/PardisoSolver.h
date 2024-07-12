@@ -59,9 +59,6 @@
 #include <mkl_pardiso.h>
 #include <mkl_service.h>
 
-using jem::util::Dictionary;
-using jem::util::HashDictionary;
-
 JIVE_BEGIN_PACKAGE( solver )
 
 
