@@ -3,15 +3,12 @@
  *  @brief Crystal visco-plasticity reduced order model with gradient regularization.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
- *  Date: XX YYYY 2024
+ *  Date: 25 July 2024
  *
  *  Updates (when, what and who)
  *     - [XX YYYY 2024] (RB)
  * 
- *  @todo Simplify some data structures, reduce loops.
- * 
- *   Add props (n, tstar, tauY)
- *   Split gammaHat and tauHat files as: filename + incr
+ *  @todo Add post-processing options (displacement, strains, stress)
  *
  */
 
@@ -29,14 +26,12 @@
 #include <jem/numeric/algebra/matmul.h>
 #include <jem/numeric/algebra/MatmulChain.h>
 #include <jem/numeric/sparse/utilities.h>
-#include <jem/util/Flex.h>
 #include <jem/util/Properties.h>
 #include <jive/util/utilities.h>
 #include <jive/util/XTable.h>
 #include <jive/util/XDofSpace.h>
 #include <jive/util/Printer.h>
 #include <jive/util/Assignable.h>
-#include <jive/util/Constraints.h>
 #include <jive/algebra/MatrixBuilder.h>
 #include <jive/model/Model.h>
 #include <jive/model/ModelFactory.h>
@@ -58,13 +53,11 @@ using namespace jem;
 using jem::io::FileReader;
 using jem::numeric::matmul;
 using jem::numeric::MatmulChain;
-using jem::util::Flex;
 using jem::util::SparseArray;
 using jem::util::Properties;
 using jive::util::XTable;
 using jive::util::XDofSpace;
 using jive::util::Assignable;
-using jive::util::Constraints;
 using jive::algebra::MatrixBuilder;
 using jive::model::Model;
 using jive::geom::IShape;
@@ -93,18 +86,26 @@ typedef ElementGroup           ElemGroup;
 //   class GradientCrystalPlasticityROM
 //=======================================================================
 
-/** @brief Implements crystal visco-plasticity Reduced Order model.
+/** @brief Implements crystal visco-plasticity Reduced Order Model (ROM).
  * 
- *  The class \c GradientCrystalPlasticityROM implements a crystal
- *  visco-plasticity finite element model with gradient-based 
- *  regularization of the slip(s). The displacements (2D, 3D) and the
- *  slip(s) are nodal degrees of freedom. The Schmid stress(es) are 
- *  defined on a dummy nodegroup 'ipNodes'. The model allows an 
- *  arbitrary number of slip planes, defined by the user at runtime.
+ *  The class \c GradientCrystalPlasticityROM implements a Reduced Order
+ *  Model (ROM) for gradient-based crystal visco-plasticity simulations.
+ *  The activity coefficients (corresponding to the chosen set of basis)
+ *  are the unknown degrees of freedom, defined on a dummy modeNodes'
+ *  NodeGroup. The corresponding finite element model class is 
+ *  \c GradientCrystalPlasticityModel. 
+ *  
+ *  All parameters required to run the offline simulation with \c 
+ *  GradientCrystalPlasticityModel are relevant for the online ROM
+ *  \c GradientCrystalPlasticityROM. The user also needs to provide the
+ *  basis/sensitivities file name and a vector containing the chosen
+ *  basis.
  * 
- *  \note The number of nodes in the dummy 'ipNodes' nodegroup must match
- *  the total number of integration points in the model. Also, matrix.type
- *  must be set to "Sparse", instead of "FEM".
+ *  \note The number of nodes in the dummy 'modeNodes' NodeGroup must 
+ *  match the size of the chosen 'basis' vector. Also, matrix.type
+ *  must be set to "Sparse", instead of "FEM", symmetry set to 'false'.
+ * 
+ *  \note The code only works for single point Gauss integration.
  * 
  *  Below is an example how a model with three slip system is defined:
  * 
@@ -112,67 +113,42 @@ typedef ElementGroup           ElemGroup;
  *  matrix.type = "Sparse";
  *  matrix.symmetric = false; 
  * 
- *  models = ["bulk","cons","lodi"];
+ *  models = ["bulk"];
 
     bulk = "GradientCrystalPlasticityROM"
 
     {
-      elements = "DomainElems";        // Element group
-      ipNodes  = "DomainIPNodes";      // (Dummy) Node group     
+      elements   = "DomainElems";        // Element group
+      modeNodes  = "modeNodes";          // (Dummy) Node group
+      nmodes     = 7;                    // # of basis 
+      nslips     = 2;                    // # of slips
 
       shape =
       {
-        type      = "Quad4";           // Element type
-        intScheme = "Gauss2*Gauss2";   // Quadrature rule
-      };
-      
-      material =
-      {
-        type   = "Hooke";              // Base material
-        rank   = 2;                    // Rank (2D in this case!)
-        state  = "PLANE_STRAIN";
-
-        young    = 100.e+09;           // Young's modulus
-        poisson  = 0.3;                // Poisson ratio
-        rho      = 0.0;                // Material density
+        type      = "Triangle3";         // Element type
+        intScheme = "Gauss1";            // Quadrature rule
       };
 
-      rotation = 45.0;                 // Slip system rotation
-      dtime    = 1.0;                  // Time step-size
+      dtime    = 1.0;                    // Time step-size
+      tstar    = 1.e+02;                 // Relaxation time
+      tauY     = 50.0;                   // Yield stress
+      n        = 9.0;                    // Overstress function exponent
 
-      slips = [ "slip0", "slip1", "slip2" ];
+      slipHat0File = "pod_gamHat0.basis";  // slip sensitivity w.r.t unit load
+      slipHatFile  = "pod_gamHat.basis";   // slip sensitivity w.r.t tau basis
+      tauHatFile   = "pod_tau.basis";      // tau basis
 
-      slip0 = 
-      {
-        n         = 2.0;               // Exponent
-        tstar     = 1.0;               // Relaxation time
-        tauY      = 200.e+06;          // Yield stress
-        selfH     = 100.;              // Self hardening
-        plane     = [1.,1.,0.];        // Slip plane
-        direction = [-1.,1.,0.];       // Slip direction
-      };
+      basis         = [0,1,2,3,4,5,6];     // chosen set of basis
 
-      slip1 =
-      {
-        n         = 5.0;
-        tstar     = 1.0;
-        tauY      = 250.e+06;
-        selfH     = 100.;
-        plane     = [0.,1.,0.];
-        direction = [1.,0.,0.];
-      };
-
-      slip2 =
-      {
-        n         = 10.0;
-        tstar     = 0.5;
-        tauY      = 350.e+06;
-        selfH     = 100.;
-        plane     = [1.,1.,0.];
-        direction = [1.,-1.,0.];
-      };
-    };
- *  \endcode 
+ *  \endcode
+ * 
+ *  For the basis chosen in the input code, the the slip 
+ *  sensitivity files are parsed as: pod_gamHat.basis0, 
+ *  pod_gamHat.basis1, ...., pod_gamHat.basis6. The same for tau, 
+ *  pod_tau.basis0, pod_tau.basis1, ...., pod_tau.basis6. These
+ *  files must be present in the same directory as *.pro input
+ *  file.
+ *  
  */
 
 class GradientCrystalPlasticityROM : public Model
@@ -191,9 +167,9 @@ class GradientCrystalPlasticityROM : public Model
   static const char*        NSLIPS_PROP;
   static const char*        MODE_NODES_PROP;       
 
-  static const char*        GAMMA_HAT0_FILE;
+  static const char*        SLIP_HAT0_FILE;
   static const char*        BASIS;
-  static const char*        GAMMA_HAT_FILE;
+  static const char*        SLIP_HAT_FILE;
   static const char*        TAU_HAT_FILE;
   
                              GradientCrystalPlasticityROM
@@ -244,41 +220,6 @@ class GradientCrystalPlasticityROM : public Model
     ( const Properties&       params,
       const Properties&       globdat );
 
-  void                      getOutputData_
-
-    ( Ref<XTable>             table,
-      const Vector&           weights,
-      const String&           contents,
-      const Vector&           state );         
-
-  void                      getStress_
-
-    ( XTable&                 table,
-      const Vector&           weights,
-      const Vector&           state   );
-
-  void                      getElemStress_
-
-    ( XTable&                 table,
-      const Vector&           weights,
-      const Vector&           state   );
-
-  void                      getStrain_
-
-    ( XTable&                 table,
-      const Vector&           weights );
-
-  void                      getElemStrain_
-
-    ( XTable&                 table,
-      const Vector&           weights );
-
-  void                      getTau_
-
-    ( XTable&                 table,
-      const Vector&           weights,
-      const Vector&           state   );
-
   void                      getElemTau_
 
     ( XTable&                 table,
@@ -291,16 +232,15 @@ class GradientCrystalPlasticityROM : public Model
       const Vector&           weights,
       const Vector&           state   );
 
+  void                      getError_
+
+    ( const Vector&           state,
+      const Vector&           state0  );
+
   void                      checkCommit_
 
-    ( const Properties&       params );  
-
-  /* Initialize the mapping between integration points
-   * and material points 
-   */
-
-  void                      initializeIPMPMap_ ();
-
+    ( const Properties&       params );
+    
 
  private:
 
@@ -334,25 +274,27 @@ class GradientCrystalPlasticityROM : public Model
 
   // Sensitivities
 
-  String                     gammaHat0File_;
+  String                     slipHat0File_;
   IdxVector                  basis_;
-  String                     gammaHatFile_;
+  String                     slipHatFile_;
   String                     tauHatFile_;
 
   Ref<FileReader>            iFile_;
 
-  Matrix                     gammaHat0_;  // ip x nslip
-  Cubix                      gammaHat_;   // ip x nslip x nbasis
-  Cubix                      tauHat_;     // ip x nslip x nbasis
+  Matrix                     slipHat0_;  // ip x nslip
+  Cubix                      slipHat_;   // ip x nslip x nbasis
+  Cubix                      tauHat_;    // ip x nslip x nbasis
 
   // Pre-computations during the INIT stage
 
   Matrix                     M_;
   Vector                     fext_;
 
-  // Mapping between integration points and material points
-  // (check if required!)
+  int                        step_;
 
-  SparseArray <int, 2>      ipMpMap_;
+  // Error
+
+  double                    err_;
+  double                    errTotal_;
 
 };

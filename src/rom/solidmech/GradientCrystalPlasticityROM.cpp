@@ -1,21 +1,14 @@
 
 /** @file GradientCrystalPlasticityROM.cpp
- *  @brief Crystal visco-plasticity model with gradient regularization.
+ *  @brief Crystal visco-plasticity reduced order model with gradient regularization.
  *  
  *  Author: R. Bharali, ritukesh.bharali@chalmers.se
- *  Date: 08 April 2024
+ *  Date: 25 July 2024
  *
  *  Updates (when, what and who)
- *     - [11 June 2024] tau (earlier a state variable) 
- *       is now an independent dof defined on dummy 
- *       integration point nodes. (RB)
- *     - [11 June 2024] added functions to write stress,
- *       strain, and tau nodal and element tables. (RB)
- *     - [25 June 2024] added user-defined rotation 
- *       parameter operating on the slip plane and 
- *       direction for flexibility. (RB)
+ *     - [XX YYYY 2024] (RB)
  * 
- *  @todo Simplify some data structures, reduce loops.
+ *  @todo Add post-processing options (displacement, strains, stress)
  *
  */
 
@@ -32,11 +25,6 @@
 
 #include "FalconSolidMechROMs.h"
 #include "GradientCrystalPlasticityROM.h"
-#include "util/TbFiller.h"
-#include "util/XNames.h"
-#include "util/Constants.h"
-#include "util/MathUtils.h"
-#include "util/TensorUtils.h"
 
 
 //=======================================================================
@@ -55,9 +43,9 @@ const char*  GradientCrystalPlasticityROM::DTIME_PROP      = "dtime";
 const char*  GradientCrystalPlasticityROM::NSLIPS_PROP     = "nslips";
 const char*  GradientCrystalPlasticityROM::NMODES_PROP     = "nmodes";
 const char*  GradientCrystalPlasticityROM::MODE_NODES_PROP = "modeNodes";
-const char*  GradientCrystalPlasticityROM::GAMMA_HAT0_FILE = "gammaHat0File";
+const char*  GradientCrystalPlasticityROM::SLIP_HAT0_FILE  = "slipHat0File";
 const char*  GradientCrystalPlasticityROM::BASIS           = "basis";
-const char*  GradientCrystalPlasticityROM::GAMMA_HAT_FILE  = "gammaHatFile";
+const char*  GradientCrystalPlasticityROM::SLIP_HAT_FILE   = "slipHatFile";
 const char*  GradientCrystalPlasticityROM::TAU_HAT_FILE    = "tauHatFile";
 
 //-----------------------------------------------------------------------
@@ -211,7 +199,7 @@ GradientCrystalPlasticityROM::GradientCrystalPlasticityROM
                    dofTypes_[slice(BEGIN, 1)] 
                  );
 
-  myProps.get ( gammaHat0File_, GAMMA_HAT0_FILE );
+  myProps.get ( slipHat0File_, SLIP_HAT0_FILE );
 
   // Now, the pre-computed basis from offline data
   // are parsed and loaded onto Jive Matrix, Cubix
@@ -222,28 +210,30 @@ GradientCrystalPlasticityROM::GradientCrystalPlasticityROM
   // Parse gamma hat 0 (basis corresponding to unit
   // load)
 
-  gammaHat0_.resize( ipCount, nslips_ );
+  slipHat0_.resize( ipCount, nslips_ );
+
+  System::out() << "Parsing " << slipHat0File_ << "... \n";
 
   // Open file, return error if it fails
-  iFile_ = newInstance<FileReader> ( gammaHat0File_ );
+  iFile_ = newInstance<FileReader> ( slipHat0File_ );
 
   // Parse entries
   for ( int irow = 0; irow < ipCount; irow++ )
   {
     for ( int icol = 0; icol < nslips_; icol++ )
     {
-      gammaHat0_(irow,icol) = iFile_->parseFloat();
+      slipHat0_(irow,icol) = iFile_->parseFloat();
     }
   }
 
   // Close file
   iFile_->close();
 
-  myConf.set ( GAMMA_HAT0_FILE, gammaHat0File_ );
+  myConf.set ( SLIP_HAT0_FILE, slipHat0File_ );
 
   // Parse all gamma hat sensitivities from file
 
-  myProps.get ( gammaHatFile_,  GAMMA_HAT_FILE  );
+  myProps.get ( slipHatFile_,  SLIP_HAT_FILE  );
   myProps.get ( basis_, BASIS );
 
   // Check whether node group size matches number of modes
@@ -252,18 +242,18 @@ GradientCrystalPlasticityROM::GradientCrystalPlasticityROM
   {
     throw IllegalInputException (
       context,
-      "wrong gammaHatFile size!"
+      "size of basis does not match number of modes!"
     );
   }
 
   myConf.set ( BASIS, basis_ );
 
-  gammaHat_.resize( ipCount, nslips_, nmodes_ );
+  slipHat_.resize( ipCount, nslips_, nmodes_ );
 
   for ( int imode = 0; imode < nmodes_; imode++ )
   {
     // Add mode index to file name
-    String fileName = gammaHatFile_ + String(basis_[imode]);
+    String fileName = slipHatFile_ + String(basis_[imode]);
 
     System::out() << "Parsing " << fileName << "... \n";
 
@@ -275,7 +265,7 @@ GradientCrystalPlasticityROM::GradientCrystalPlasticityROM
     {
       for ( int icol = 0; icol < nslips_; icol++ )
       {
-        gammaHat_(irow,icol,imode) = iFile_->parseFloat();
+        slipHat_(irow,icol,imode) = iFile_->parseFloat();
       }
     }
 
@@ -283,7 +273,7 @@ GradientCrystalPlasticityROM::GradientCrystalPlasticityROM
     iFile_->close();
   }
 
-  myConf.set ( GAMMA_HAT_FILE,  gammaHatFile_  );
+  myConf.set ( SLIP_HAT_FILE,  slipHatFile_ );
 
   // Parse all tau hat sensitivities from file
 
@@ -317,9 +307,7 @@ GradientCrystalPlasticityROM::GradientCrystalPlasticityROM
   myConf.set ( TAU_HAT_FILE, tauHatFile_ );
 
   System::out() << "Parsed pre-computed data in " << t.toDouble()
-                << " seconds ...\n"; 
-
-  //initializeIPMPMap_ ();
+                << " seconds ...\n";
 }
 
 
@@ -451,6 +439,14 @@ bool GradientCrystalPlasticityROM::takeAction
 
     System::out() << "solution: " << state << "\n";
 
+    step_++;
+
+    // Error
+
+    errTotal_ += dtime_ * err_;
+
+    System::out() << "error: " << errTotal_ << "\n";
+
     return true;
   }
 
@@ -459,7 +455,6 @@ bool GradientCrystalPlasticityROM::takeAction
 
   if ( action == Actions::CHECK_COMMIT )
   {
-    //checkCommit_ ( params );
     return true;
   }
 
@@ -529,25 +524,24 @@ void GradientCrystalPlasticityROM::init_ ()
     // Compute M_
     for ( int islip = 0; islip < nslips_; islip++ )
     {
-      M_ += matmul( tauHat_  (ielem,islip,ALL), 
-                    gammaHat_(ielem,islip,ALL) )
-            * ipWeights[0];
+      M_    += matmul( tauHat_  (ielem,islip,ALL), 
+                    slipHat_(ielem,islip,ALL) )
+               * ipWeights[0];
 
-      fext_ +=   tauHat_  (ielem,islip,ALL) 
-               * gammaHat0_(ielem,islip)
+      fext_ += tauHat_  (ielem,islip,ALL) 
+               * slipHat0_(ielem,islip)
                * ipWeights[0];
     }
   }
 
-  System::out() << "fext: " << fext_ << "\n";
-
   // Scale with dtime
   M_ /= dtime_;
 
-  /*double d;
-  using jem::numeric::LUSolver;
-  bool works = LUSolver::invert (M_,d);
-  System::out() << "M is invertible: " << works << "\n";*/
+  // Initialize step counter and error
+
+  step_     = 0;
+  err_      = 0.0;
+  errTotal_ = 0.0;
 }
 
 
@@ -576,13 +570,8 @@ void GradientCrystalPlasticityROM::getMatrix_
   const int   ipCount    = shape_->ipointCount ();
   const int   mNodeCount = modenodes.size      ();
 
-  // Extract the solution (probably not required!)
-
   IdxVector   modeDofs ( mNodeCount );
   dofs_->getDofIndices ( modeDofs, modenodes, modeTypes_ );
-
-  Vector sol  ( mNodeCount ); sol  = select ( state,  modeDofs );
-  Vector sol0 ( mNodeCount ); sol0 = select ( state0, modeDofs );
 
   // Allocate inodes, coords, ipWeights, wip
   IdxVector   inodes     ( nodeCount );
@@ -595,6 +584,7 @@ void GradientCrystalPlasticityROM::getMatrix_
 
   mat   = M_;
   force = 0.0;
+  err_  = 0.0;
 
   // Iterate over all elements assigned to this model
 
@@ -612,11 +602,6 @@ void GradientCrystalPlasticityROM::getMatrix_
     // Get the element ip weights
     shape_-> getIntegrationWeights( ipWeights, coords );
 
-    // Hard-coded stuff
-    //const double tstar = 1.0e+2;
-    //const double tauY  = 50.;
-    //const double n     = 9.0;
-
     // Allocate tau, phi and dphi
 
     Vector tau  ( nslips_ ); tau  = 0.0;
@@ -627,7 +612,7 @@ void GradientCrystalPlasticityROM::getMatrix_
 
     for ( int islip = 0; islip < nslips_; islip++ )
     {
-      tau[islip]  = dot( tauHat_(ielem, islip,ALL), sol );
+      tau[islip]  = dot( tauHat_(ielem, islip,ALL), state );
       
       phi[islip]  = sign( tau[islip] ) / tstar_
                     * ::pow( fabs( tau[islip] ) / 
@@ -641,29 +626,35 @@ void GradientCrystalPlasticityROM::getMatrix_
                     * phi[islip];
 
       mat        -= matmul( tauHat_ (ielem,islip,ALL), 
-                    gammaHat_(ielem,islip,ALL) )
+                    slipHat_(ielem,islip,ALL) )
                     * ipWeights[0] * dphi[islip];
+
+      // Compute slip and slip0 (required for error)
+
+      double slip  = slipHat0_(ielem,islip) * (step_+1) * dtime_
+                    + dot( slipHat_(ielem, islip,ALL), state );
+      double slip0 = slipHat0_(ielem,islip) * step_ * dtime_
+                    + dot( slipHat_(ielem, islip,ALL), state0 );
+
+      // Error computation
+
+      err_ += ipWeights[0] * 
+             ::pow( (( slip - slip0 )/dtime_ - phi[islip]), 2.0 )
+             / (dphi[islip] + 1.e-06);
     }
   }
 
-  // CHECK WHETHER IT IS FEXT - FINT, AND THEN
-  // K = D_FINT / D_SOL
-
   // Update force with pre-computed parts
 
-  force += mc1.matmul( M_, Vector(sol - sol0) )
+  force += mc1.matmul( M_, Vector(state - state0) )
            +  fext_;
 
-  // Assemble
+  // Assemble global
 
   if ( mbuilder != nullptr )
   {
     mbuilder -> addBlock ( modeDofs, modeDofs, mat );
   }
-
-  //System::out() << "K: " << mat   << "\n\n";
-  //System::out() << "res: " << force << "\n\n";
-
 }
 
 
@@ -678,37 +669,6 @@ void GradientCrystalPlasticityROM::getMatrix2_
 
     ( MatrixBuilder&          mbuilder )
 {
-}
-
-
-//-----------------------------------------------------------------------
-//   initializeIPMPMap_
-//-----------------------------------------------------------------------
-
-
-void  GradientCrystalPlasticityROM::initializeIPMPMap_ ( )
-
-{
-  jive::IdxVector   ielems     = egroup_.getIndices  ();
-
-  const idx_t   ielemCount = ielems.size         ();
-  const idx_t   ipCount    = shape_->ipointCount ();
-
-        idx_t   ipoint     = 0;
-
-  for ( int ie = 0; ie < ielemCount; ie++ )
-  {
-    // Get the global element index.
-
-    int  ielem = ielems[ie];
-
-    // loop over integration points 
-
-    for ( int ip = 0; ip < ipCount; ip++, ipoint++ )
-    {
-      ipMpMap_ ( ielem, ip ) = ipoint;
-    }
-  }
 }
 
 
@@ -768,79 +728,6 @@ bool GradientCrystalPlasticityROM::getTable_
 
 
 //-----------------------------------------------------------------------
-//   getStress_
-//-----------------------------------------------------------------------
-
-
-void GradientCrystalPlasticityROM::getStress_
-
-  ( XTable&        table,
-    const Vector&  weights,
-    const Vector&  state )
-
-{
-}
-
-
-//-----------------------------------------------------------------------
-//   getElemStress_
-//-----------------------------------------------------------------------
-
-
-void GradientCrystalPlasticityROM::getElemStress_
-
-  ( XTable&        table,
-    const Vector&  weights,
-    const Vector&  state )
-
-{
-}
-
-
-//-----------------------------------------------------------------------
-//   getStrain_
-//-----------------------------------------------------------------------
-
-
-void GradientCrystalPlasticityROM::getStrain_
-
-  ( XTable&        table,
-    const Vector&  weights )
-
-{
-}
-
-
-//-----------------------------------------------------------------------
-//   getElemStrain_
-//-----------------------------------------------------------------------
-
-
-void GradientCrystalPlasticityROM::getElemStrain_
-
-  ( XTable&        table,
-    const Vector&  weights )
-
-{
-}
-
-
-//-----------------------------------------------------------------------
-//   getTau_
-//-----------------------------------------------------------------------
-
-
-void GradientCrystalPlasticityROM::getTau_
-
-  ( XTable&        table,
-    const Vector&  weights,
-    const Vector&  state )
-
-{
-}
-
-
-//-----------------------------------------------------------------------
 //   getElemTau_
 //-----------------------------------------------------------------------
 
@@ -860,19 +747,17 @@ void GradientCrystalPlasticityROM::getElemTau_
 
   // Get some additional details
   const int   elemCount  = ielems.size         ();
-  const int   mNodeCount = modenodes.size      ();
+  //const int   mNodeCount = modenodes.size      ();
 
   // Extract the solution (probably not required!)
 
-  IdxVector   modeDofs ( mNodeCount );
-  dofs_->getDofIndices ( modeDofs, modenodes, modeTypes_ );
+  //IdxVector   modeDofs ( mNodeCount );
+  //dofs_->getDofIndices ( modeDofs, modenodes, modeTypes_ );
 
-  Vector sol  ( mNodeCount ); sol  = select ( state,  modeDofs );
+  //Vector sol  ( mNodeCount ); sol  = select ( state,  modeDofs );
 
   Matrix     elTau      ( elemCount, nslips_ );
   IdxVector  jcols      ( nslips_   );
-
-  vector<IdxVector> tauDofs ( nslips_ );
 
   for ( int islip = 0; islip < nslips_; islip++ )
   {
@@ -896,11 +781,11 @@ void GradientCrystalPlasticityROM::getElemTau_
     {
       // Assuming one point Gauss integration
 
-      elTau(ielem,islip) += dot( tauHat_(ielem, islip,ALL), sol );
+      elTau(ielem,islip) += dot( tauHat_(ielem, islip,ALL), state );
     }
   }
 
-  // Add the stresses to the table.
+  // Add the tau to the table.
 
   table.setBlock ( ielems, jcols, elTau );
 }
@@ -926,29 +811,21 @@ void GradientCrystalPlasticityROM::getElemSlip_
 
   // Get some additional details
   const int   elemCount  = ielems.size         ();
-  const int   mNodeCount = modenodes.size      ();
 
-  // Extract the solution (probably not required!)
+  // Initialize 
 
-  IdxVector   modeDofs ( mNodeCount );
-  dofs_->getDofIndices ( modeDofs, modenodes, modeTypes_ );
-
-  Vector sol  ( mNodeCount ); sol  = select ( state,  modeDofs );
-
-  Matrix     elTau      ( elemCount, nslips_ );
+  Matrix     elSlip     ( elemCount, nslips_ );
   IdxVector  jcols      ( nslips_   );
-
-  vector<IdxVector> tauDofs ( nslips_ );
 
   for ( int islip = 0; islip < nslips_; islip++ )
   {
-    String tauName = "tau" + String(islip);
-    jcols[islip]   = table.addColumn ( tauName );
+    String slipName = "slip" + String(islip);
+    jcols[islip]    = table.addColumn ( slipName );
   }
 
   MChain1    mc1;
 
-  elTau = 0.0;
+  elSlip = 0.0;
 
   // Iterate over all elements assigned to this model.
 
@@ -961,35 +838,16 @@ void GradientCrystalPlasticityROM::getElemSlip_
     for ( int islip = 0; islip < nslips_; islip++ )
     {
       // Assuming one point Gauss integration
+      // A scaling dtime_ is included for slipHat0
 
-      elTau(ielem,islip) += dot( tauHat_(ielem, islip,ALL), sol );
+      elSlip(ielem,islip) += slipHat0_(ielem,islip) * step_ * dtime_
+                            + dot( slipHat_(ielem, islip,ALL), state );
     }
   }
 
-  // Add the stresses to the table.
+  // Add the slips to the table.
 
-  table.setBlock ( ielems, jcols, elTau );
-}
-
-
-//-----------------------------------------------------------------------
-//   getOutputData_
-//-----------------------------------------------------------------------
-
-/** all data at Gauss points are computed, however, only those requested
- *  in the vtk block in the .pro file will be written to vtu files.
- *  Example: vtk.data = "stress_yy | stress_xx" for xx and yy stress 
- *  components.
- */
-
-void GradientCrystalPlasticityROM::getOutputData_
-
-  ( Ref<XTable>    table,
-    const Vector&  weights,
-    const String&  contents,
-    const Vector&  state )
-          
-{
+  table.setBlock ( ielems, jcols, elSlip );
 }
 
 //-----------------------------------------------------------------------
