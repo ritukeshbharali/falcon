@@ -46,6 +46,10 @@
 *.csv
 *.stats
 
+# ROM related files
+*.basis*
+*.cons*
+
 # Doc
 /docs/html
 
