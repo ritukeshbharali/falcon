@@ -35,6 +35,7 @@
  *     - [02 Jan  2024] Added wrapper to NVIDIA AMGX (RB)
  *     - [02 Jan  2024] Added wrapper to Panua Pardiso (RB)
  *     - [16 Apr  2024] Added wrapper to NVIDIA cuDSS (RB)
+ *     - [26 Aug  2024] Added wrapper to SuperLU_MT (RB)
  */
 
 
@@ -87,6 +88,10 @@
 
 #if defined(WITH_PARDISO)
 #include "PardisoSolver.h"
+#endif
+
+#if defined(WITH_SUPERLUMT)
+#include "SuperLUSolver.h"
 #endif
 
 #if defined(WITH_UMFPACK)
@@ -154,6 +159,10 @@ static void declareSolvers_ ()
 
   #if defined(WITH_PARDISO)
   PardisoSolver       :: declare ();
+  #endif
+
+  #if defined(WITH_SUPERLUMT)
+  SuperLUSolver       :: declare ();
   #endif
 
   #if defined(WITH_UMFPACK)
