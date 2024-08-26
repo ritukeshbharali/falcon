@@ -1,0 +1,13 @@
+
+<!-- Include the finite element mesh data from another file -->
+
+<Include source="problem.mesh"/>
+
+<!-- Define the constraints (supports). -->
+
+<NodeConstraints>
+
+  dy[LeftNodes] = 0.0;
+  dx[LeftNodes] = 0.0;
+
+</NodeConstraints>
