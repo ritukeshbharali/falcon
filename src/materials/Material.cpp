@@ -8,7 +8,6 @@
 #include "BourdinPhaseMaterial.h"
 #include "MiehePhaseMaterial.h"
 #include "J2Material.h"
-#include "DruckerMaterial.h"
 
 using namespace jem;
 
@@ -244,8 +243,6 @@ Ref<Material>  newMaterial
     mat = newInstance<MiehePhaseMaterial>   ( rank, globdat );
   else if ( type == "J2" )
     mat = newInstance<J2Material>           ( rank, globdat );
-  else if ( type == "Drucker" )
-    mat = newInstance<DruckerMaterial>      ( rank, globdat );
   else
     matProps.propertyError ( name, "Invalid material: " + type );
 
