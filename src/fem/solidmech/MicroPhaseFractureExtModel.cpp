@@ -709,7 +709,7 @@ void MicroPhaseFractureExtModel::getMatrix_
       phaseMaterial_-> update ( stressP, stressN, stiffP, stiffN, strain, ipoint );
 
       double Psi  = phaseMaterial_->givePsi();
-      Psi = max(Psi,Psi0_);
+      Psi         = max(Psi,Psi0_);
 
       // Compute local phase-field (d) iteratively via extrapolation
 
@@ -740,7 +740,7 @@ void MicroPhaseFractureExtModel::getMatrix_
 
       // Carry out the iterative procedure
 
-      while ( fabs(Res) > 1.e-4 )
+      while ( abs(Res) > 1.e-4 && iter < 100 )
       {
 
         // Increase iteration counter 
@@ -773,7 +773,6 @@ void MicroPhaseFractureExtModel::getMatrix_
         
         Res       = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pfEx );
         J         = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
-
       }
 
       // Ensure extrapolated phase-field (d) is within bounds [0,1]
@@ -833,7 +832,7 @@ void MicroPhaseFractureExtModel::getMatrix_
 
       // Carry out the iterative procedure
 
-      while ( abs(Res) > 1.e-4 )
+      while ( abs(Res) > 1.e-4 && iter < 100 )
       {
 
         // Increase iteration counter 
@@ -867,7 +866,6 @@ void MicroPhaseFractureExtModel::getMatrix_
         
         Res       = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
         J         = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
-
       }
 
       // Check if fracture is loading
