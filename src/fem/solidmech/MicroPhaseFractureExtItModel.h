@@ -14,6 +14,10 @@
  *     - [25 December 2023] removed getIntForce_,
  *       getMatrix_ returns the internal force if
  *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ * 
+ *     - [23 November 2024] introduced user-defined
+ *       parameters oTol and oMaxIter that allows control
+ *       over the extrapolation corrections. (RB)
  */
 
 /* Include c++ headers */
@@ -118,6 +122,9 @@ class MicroPhaseFractureExtItModel : public Model
   static const char*        LENGTH_SCALE_PROP;
   static const char*        TENSILE_STRENGTH_PROP;
   static const char*        PENALTY_PROP;
+
+  static const char*        OUTER_TOL_PROP;
+  static const char*        OUTER_MAX_ITER_PROP;
 
   static const char*        BRITTLE_AT1;
   static const char*        BRITTLE_AT2;
@@ -294,8 +301,13 @@ class MicroPhaseFractureExtItModel : public Model
 
   // Extrapolation-related variables
 
+  double oTol_;
+  idx_t  oMaxIter_;
+
   double errExt_;
   bool   extFail_;
   idx_t  oIter_;
+
+
 
 };

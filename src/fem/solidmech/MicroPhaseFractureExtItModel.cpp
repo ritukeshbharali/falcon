@@ -14,6 +14,10 @@
  *     - [25 December 2023] removed getIntForce_,
  *       getMatrix_ returns the internal force if
  *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ * 
+ *     - [23 November 2024] introduced user-defined
+ *       parameters oTol and oMaxIter that allows control
+ *       over the extrapolation corrections. (RB)
  */
 
 /* Include jem and jive headers */
@@ -61,6 +65,9 @@ const char*  MicroPhaseFractureExtItModel::GRIFFITH_ENERGY_PROP  = "griffithEner
 const char*  MicroPhaseFractureExtItModel::LENGTH_SCALE_PROP     = "lengthScale";
 const char*  MicroPhaseFractureExtItModel::TENSILE_STRENGTH_PROP = "tensileStrength";
 const char*  MicroPhaseFractureExtItModel::PENALTY_PROP          = "penalty";
+
+const char*  MicroPhaseFractureExtItModel::OUTER_TOL_PROP        = "oTol";
+const char*  MicroPhaseFractureExtItModel::OUTER_MAX_ITER_PROP   = "oMaxIter";
 
 const char*  MicroPhaseFractureExtItModel::BRITTLE_AT1           = "at1";
 const char*  MicroPhaseFractureExtItModel::BRITTLE_AT2           = "at2";
@@ -251,6 +258,14 @@ MicroPhaseFractureExtItModel::MicroPhaseFractureExtItModel
   beta_         = 6500.0;
   myProps.find ( beta_, PENALTY_PROP );
   myConf. set  ( PENALTY_PROP, beta_ );
+
+  oTol_         = 1.e-3;
+  myProps.find ( oTol_, OUTER_TOL_PROP );
+  myConf. set  ( OUTER_TOL_PROP, oTol_ );
+
+  oMaxIter_     = 5000;
+  myProps.find ( oMaxIter_, OUTER_MAX_ITER_PROP );
+  myConf. set  ( OUTER_MAX_ITER_PROP, oMaxIter_ );
   
   preHist_.phasef_.resize ( ipCount );
   newHist_.phasef_.resize ( ipCount );
@@ -746,7 +761,7 @@ void MicroPhaseFractureExtItModel::getMatrix_
 
       // Carry out the iterative procedure
 
-      while ( abs(Res) > 1.e-4 )
+      while ( abs(Res) > 1.e-4 && iter < 100 )
       {
 
         // Increase iteration counter 
@@ -839,7 +854,7 @@ void MicroPhaseFractureExtItModel::getMatrix_
 
       // Carry out the iterative procedure
 
-      while ( abs(Res) > 1.e-4 )
+      while ( abs(Res) > 1.e-4 && iter < 100 )
       {
 
         // Increase iteration counter 
@@ -1570,7 +1585,7 @@ void MicroPhaseFractureExtItModel::checkCommit_
 
   StateVector::get ( state,   dofs_, globdat );
 
-  if ( ::sqrt(errExt_) > 1.e-3 )
+  if ( ::sqrt(errExt_) > oTol_ && oIter_ < oMaxIter_ )
   {
     oIter_++;
 
