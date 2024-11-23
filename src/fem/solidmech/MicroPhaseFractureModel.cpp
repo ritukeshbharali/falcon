@@ -13,6 +13,10 @@
  *     - [25 December 2023] removed getIntForce_,
  *       getMatrix_ returns the internal force if
  *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ * 
+ *     - [21 November 2024] added 'keepOffDiags' option
+ *       in assembling the stiffness matrix. By default,
+ *       it is set to 'false'. (RB)
  */
 
 /* Include jem and jive headers */
@@ -47,6 +51,7 @@ const char*  MicroPhaseFractureModel::DISP_NAMES[3]         = { "dx", "dy", "dz"
 const char*  MicroPhaseFractureModel::SHAPE_PROP            = "shape";
 const char*  MicroPhaseFractureModel::MATERIAL_PROP         = "material";
 const char*  MicroPhaseFractureModel::RHO_PROP              = "rho";
+const char*  MicroPhaseFractureModel::KEEP_OFF_DIAGS_PROP   = "keepOffDiags";
 const char*  MicroPhaseFractureModel::ARCLEN_MODE_PROP      = "arcLenMode";
 
 const char*  MicroPhaseFractureModel::FRACTURE_TYPE_PROP    = "fractureType";
@@ -197,6 +202,12 @@ MicroPhaseFractureModel::MicroPhaseFractureModel
 
   isActive_.resize ( ielemCount );
   isActive_ = 1;
+
+  // Keep diagonal terms of the stiffness matrix
+
+  keepOffDiags_  = false;
+  myProps.find ( keepOffDiags_, KEEP_OFF_DIAGS_PROP );
+  myConf. set  ( KEEP_OFF_DIAGS_PROP, keepOffDiags_ );
 
   // Model contribution to arc-length function
 
@@ -803,10 +814,14 @@ void MicroPhaseFractureModel::getMatrix_
       {
         elemMat1 += wip * mc3.matmul ( bdt, stiff, bd );
         elemMat1 += wip * dgphi * mc3.matmul ( bdt, matmul(stressP,dphidStrain), bd );
-        elemMat2 += wip * dgphi * dphidd * ( matmul ( bdt, matmul(stressP, Nip) ) );
-        elemMat3 -= wip * alpha * ( matmul ( Nip, matmul(dphidStrain, bd) ) );
         elemMat4 += wip * ( alpha * ( 1.0 - dphidd ) * matmul ( Nip, Nip ) 
                             + (2.0 * gc_*l0_/cw_) * mc2. matmul ( bet, be ) );
+
+        if ( keepOffDiags_ )
+        {
+          elemMat2 += wip * dgphi * dphidd * ( matmul ( bdt, matmul(stressP, Nip) ) );
+          elemMat3 -= wip * alpha * ( matmul ( Nip, matmul(dphidStrain, bd) ) );
+        }
       }
      
       // Compute internal forces
@@ -821,9 +836,13 @@ void MicroPhaseFractureModel::getMatrix_
     if ( mbuilder != nullptr )
     {
       mbuilder -> addBlock ( dispDofs, dispDofs, elemMat1 );
-      mbuilder -> addBlock ( dispDofs, phiDofs,  elemMat2 );
-      mbuilder -> addBlock ( phiDofs,  dispDofs, elemMat3 );
       mbuilder -> addBlock ( phiDofs,  phiDofs,  elemMat4 );
+
+      if ( keepOffDiags_ )
+      {
+        mbuilder -> addBlock ( dispDofs, phiDofs,  elemMat2 );
+        mbuilder -> addBlock ( phiDofs,  dispDofs, elemMat3 );
+      }
     }
 
     select ( force, dispDofs ) += elemForce1;

@@ -13,6 +13,10 @@
  *     - [25 December 2023] removed getIntForce_,
  *       getMatrix_ returns the internal force if
  *       mbuilder = nullptr. Eliminates duplicate code. (RB)
+ * 
+ *     - [21 November 2024] added 'keepOffDiags' option
+ *       in assembling the stiffness matrix. By default,
+ *       it is set to 'false'. (RB)
  */
 
 /* Include c++ headers */
@@ -114,6 +118,7 @@ class MicroPhaseFractureModel : public Model
   static const char*        SHAPE_PROP;
   static const char*        MATERIAL_PROP;
   static const char*        RHO_PROP;
+  static const char*        KEEP_OFF_DIAGS_PROP;
   static const char*        ARCLEN_MODE_PROP;
 
   static const char*        FRACTURE_TYPE_PROP;
@@ -249,6 +254,12 @@ class MicroPhaseFractureModel : public Model
    */
 
   IdxVector                 isActive_;
+
+  /* Flag to indicate off-diagonal components of the 
+   * stiffness matrix is assembled or set to zero. 
+   */
+
+  bool keepOffDiags_;
 
   /* Flag to indicate whether this model contributes the Arc-length
    * Function
