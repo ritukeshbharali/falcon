@@ -1,4 +1,4 @@
-/* Input file for Single Edge Notched specimen under Tension (SENT) */
+/* Input file for Single Edge Notched specimen under Shear (SENS) */
 
 
 // Setup log file for the entire simulation
@@ -17,7 +17,7 @@ control =
 {
   fgMode   = false;
   pause    = 0.;
-  runWhile = "i < 161";
+  runWhile = "i < 4101";
 };
 
 
@@ -31,10 +31,9 @@ input =
 
 
 /* Model tree for the the problem. We work with 'Matrix'
-   type model of type 'FEM'. In it, we define multi models.
-   The "bulk" model is a PhaseFieldDamage FE model, which
-   assembles stiffness matrix and internal force, among
-   other things. The "cons" model of type Dirichlet enforces
+   type model of type 'FEM'. matrix.symmetric is false 
+   for MicroPhaseFractureExt (Extrapolation)
+   "bulk" model. The "cons" model of type Dirichlet enforces
    Dirichlet boundary conditions. The "lodi" model stores
    the load-displacement data for a certain set of nodes 
    (TopNodes in this case).
@@ -43,7 +42,7 @@ input =
 model = "Matrix"
 {
   matrix.type = "FEM";
-  // matrix.symmetric = true;
+  matrix.symmetric = false;
 
   model       =  "Multi"
   {
@@ -61,7 +60,7 @@ model = "Matrix"
       
       material =
       {
-        type   = "BourdinPhase";
+        type   = "AmorPhase";
         rank   = 2;
         state  = "PLANE_STRAIN";
 
@@ -70,11 +69,14 @@ model = "Matrix"
         rho      = 1.0;
       };
 
+      //keepOffDiags    = false;
+      //arcLenMode      = false;
+
       fractureType    = "at2";
       griffithEnergy  = 2.7;
       lengthScale     = 0.015;
       tensileStrength = 0.0;
-      penalty         = 500.;
+      penalty         = 150.;
 
     };
     
@@ -82,9 +84,9 @@ model = "Matrix"
     {
       type       = "Dirichlet";
       nodeGroups = "TopNodes";
-      dofs       = "dy";
+      dofs       = "dx";
       factors    = [ 1.0];
-      stepSize   = 1.e-5;
+      stepSize   = 1.e-4;
 
     };
 
@@ -105,31 +107,52 @@ extraModules =
   
   solver = "ReduceStepping"
   {
-    reduction      = 0.01;
+    reduction      = .01;
     startIncr      = 1.e-4;
-    minIncr        = 1.e-12;
-    reduceStep     = 54;
+    minIncr        = 1.e-10;
+    reduceStep     = 85;
 
     solver = "Nonlin"
     {
-      precision  = 1.e-3;
-      maxIter    = 2500;
-      //reformIter = 0;
-      lineSearch = false;
-      bounds     = ["b1"];
+      precision   = 1.e-4;
+      maxIter     = 5000;
+      lineSearch  = true;
+      bounds = ["b1"];
       solver =
       {
-        type = "SkylineLU";
-        useThreads=true;
+        type  = "Pardiso";
+        lenient = false;
+        mtype = 11;
+        numThreads  = 4;
+        msglvl  = 0;
+        sortColumns = true;
+        matrixChecker = false;
+        matrixOrdering  = "amd";
+        matrixScaling = true;
+        parFactorize  = true;
+
+        //type = "GMRES";
+        //precon.type="ILUd";
+        //precon.reorder = true;
+        //precon.maxFill = 4.00000;
+        //precon.dropTol = 1.00000e-08;
+        //precon.diagShift = 0.00000;
+        //precon.zeroThreshold = 1.00000e-08;
+        //precon.minSize = 0;
+        //precon.quality = 1.00000;
+        //precision = 1.0e-08; 
+        //type = "SparseLU";
+        //useThreads=true;
       };
 
-      b1 = 
-      {
+       b1 = 
+       {
          dofType    = "phi";
          lowerBound = 0.;
          upperBound = 1.;
       };
     };
+
   };
 
   graph =
@@ -139,20 +162,20 @@ extraModules =
       loadDisp =
       {
         key = "Load-displacement curve";
-        xData = "model.model.lodi.disp[1]";
-        yData = "model.model.lodi.load[1]";
+        xData = "model.model.lodi.disp[0]";
+        yData = "model.model.lodi.load[0]";
       };
    };
-
 
   lodi = "Sample"
     {
       file       = "$(CASE_NAME)_lodi.dat";
-      header     = "  uy | fy ";
-      dataSets   = ["model.model.lodi.disp[1]","model.model.lodi.load[1]"];
+      header     = "  ux | fx ";
+      dataSets   = ["model.model.lodi.disp[0]","model.model.lodi.load[0]"];
     }; 
 
-  // FemViewModule, provides a visiualisation of the mesh during simulation. 
+
+  // FemViewModule, provides a visualisation of the mesh during simulation. Remove this module when running on the cluster!
   view = "FemView"
   {
 
@@ -181,7 +204,7 @@ extraModules =
       {
         // Use the solution as the z-displacement.
         autoScale=false;
-        scale = 0.01;
+        scale = 0.1;
         dy = "state[dy]";
         dx = "state[dx]";
       };
@@ -199,24 +222,25 @@ extraModules =
     
     //updateWhen = "accepted";
     
-  };
+  };  
 
   vtk = "Paraview"
     {
-       fileName      = "$(CASE_NAME)_out";
-       elements      = "DomainElems";
-       printInterval = 10;
-       cellData      = ["pf"];
+       fileName   = "$(CASE_NAME)_out";
+       elements   = "DomainElems";
+       interval   = 1;
+       cellData   = ["pf"];
     };
 
   sample = "Sample"
   {
-    // Save iteration data in file.
+    // Save load displacement data in file.
     file = "$(CASE_NAME)_iter.dat";
+    //header = "  0.00000000e+00   0.00000000e+00   0.00000000e+00";
     dataSets = [ 
                  "i", 
-                 "solverInfo.iterCount" 
+                 "solverInfo.iterCount"
                ];
-  };     
+  };   
 
 };

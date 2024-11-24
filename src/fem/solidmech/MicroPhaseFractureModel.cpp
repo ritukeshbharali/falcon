@@ -690,15 +690,15 @@ void MicroPhaseFractureModel::getMatrix_
       double Res         = dgphi * Psi + gc_/(cw_*l0_)*dw + alpha * ( d - pf );
       double J           = ddgphi * Psi + gc_/(cw_*l0_)*ddw + alpha;
 
-      // int iter = 0;
+      int iter = 0;
 
       // Carry out the iterative procedure
 
-      while ( abs(Res) > 1.e-4 )
+      while ( abs(Res) > 1.e-4 && iter < 100 )
       {
 
         // Increase iteration counter 
-        // iter   += 1;        
+        iter   += 1;        
         
         // Update local phase-field
         d      -= Res/J;
