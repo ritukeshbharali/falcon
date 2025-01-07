@@ -1,7 +1,16 @@
-/* Input file for Single Edge Notched specimen under Tension (SENT) */
+/* 
+  Case    : Single Edge Notched specimen under Tension (SENT)
+  Ref     : DOI: 10.1007/s00466-023-02380-1
+  FE model: MicroPhaseFractureExtIt
+  Material: Bourdin (No split)
+  Loading : Dirichlet
+  Implicit: Nonlin (Jive Newton-Raphson)
+  Solver  : SkylineLU
+*/
 
 
-// Setup log file for the entire simulation
+// Setup a log file for the entire simulation. For additional
+// default options used in the analysis, always check the log.
 
 log =
 {
@@ -10,8 +19,12 @@ log =
 };
 
 
-// Setup command line options and number of steps to run
-// with runWhile, i being step number
+// 'control' refers to the Control Module. fgMode = false 
+// indicates that once the runWhile is fulfilled, the
+// simulation will terminate. If set to true, the user can
+// execute 'step 100' to run 100 more steps. In 'runWhile',
+// 'i' is the step number. One can also use 't' for time, if
+// simulation involves time.
 
 control = 
 {
@@ -21,8 +34,8 @@ control =
 };
 
 
-// Additional input file that stores constraints
-// for the problem
+// 'input' refers to the Input Module. 'file' containing
+// mesh, initial solution, and constraints are provided.
 
 input =
 {
@@ -30,15 +43,12 @@ input =
 };
 
 
-/* Model tree for the the problem. We work with 'Matrix'
-   type model of type 'FEM'. In it, we define multi models.
-   The "bulk" model is a PhaseFieldDamage FE model, which
-   assembles stiffness matrix and internal force, among
-   other things. The "cons" model of type Dirichlet enforces
-   Dirichlet boundary conditions. The "lodi" model stores
-   the load-displacement data for a certain set of nodes 
-   (TopNodes in this case).
-*/
+// Jive's concept of model and modules are used here. Models 
+// perform the actions requested by the modules. We define a
+// 'model' of type 'Matrix', the matrix model is of 'type'
+// 'FEM'. Multiple sub-models may contribute to the system (
+// stiffness) matrix, forces and constraints, so we choose 
+// 'model' as type 'multi'.
 
 model = "Matrix"
 {
@@ -102,6 +112,11 @@ model = "Matrix"
   };
 };
 
+
+// If you look into the chain module in main.cpp, the last 
+// module is 'extraModules'. 'extraModules' allow the user to
+// define a chain of modules to be executed at runtime.
+
 extraModules =
 {
   modules = ["solver","graph","lodi","view","vtk","sample"];
@@ -122,30 +137,8 @@ extraModules =
       bounds = ["b1"];
       solver =
       {
-        type  = "Pardiso";
-        lenient = false;
-        mtype = 11;
-        numThreads  = 4;
-        msglvl  = 0;
-        sortColumns = true;
-        matrixChecker = false;
-        matrixOrdering  = "metis";
-        matrixScaling = true;
-        parFactorize  = true;
-        
-        //type = "GMRES";
-        //precon.type="ILUd";
-        //precon.reorder = true;
-        //precon.maxFill = 3.00000;
-        //precon.dropTol = 1.00000e-08;
-        //precon.diagShift = 0.00000;
-        //precon.zeroThreshold = 1.00000e-08;
-        //precon.minSize = 0;
-        //precon.quality = 1.00000;
-        //precision = 1.0e-08;
-
-        //type = "SkylineLU";
-        //useThreads=true;
+        type = "SkylineLU";
+        useThreads=true;
       };
 
       b1 = 
@@ -157,25 +150,6 @@ extraModules =
     };
 
   };
-
-  /*  
-  solver = 
-  {
-      type = "Nonlin";
-    
-      precision = 1.0e-6;
-    
-      maxIter   = 100;
-  
-      solver =
-      {
-        //type = "GMRES";
-        type = "SkylineLU";
-        lenient = true;
-        useThreads = true;
-      };
-  };
-  */
 
   graph =
   {
@@ -197,7 +171,10 @@ extraModules =
       dataSets   = ["model.model.lodi.disp[1]","model.model.lodi.load[1]"];
     }; 
 
-  // FemViewModule, provides a visiualisation of the mesh during simulation. 
+  
+  // FemView for real-time visualization (do not use this on
+  // cluster runs). 
+
   view = "FemView"
   {
 
@@ -246,6 +223,16 @@ extraModules =
     
   };
 
+
+  // Paraview Module is used to export solution and other
+  // fields. By default, the solution field(s) are included.
+  // In addition to that, one can export cellData (averaged
+  // over Gauss point) and/or pointData (averaged over nodes).
+  // One may also set a printInterval if one does not require
+  // printing on every step. Here "DomainElems" is the set of
+  // elements used for the export, which is usually the full
+  // domain.
+
   vtk = "Paraview"
     {
        fileName   = "$(CASE_NAME)_out";
@@ -254,15 +241,19 @@ extraModules =
        cellData   = ["pf"];
     };
 
+
+  // Sample Module is used to export data stored in the global
+  // database. Here we export step number (i), and the
+  // nonlinear iterations required to converge (iterCount) for
+  // every step upon acceptance of the solution.
+
   sample = "Sample"
   {
     // Save load displacement data in file.
     file = "$(CASE_NAME)_iter.dat";
-    //header = "  0.00000000e+00   0.00000000e+00   0.00000000e+00";
     dataSets = [ 
                  "i", 
                  "solverInfo.iterCount"
-                 //"model.model.lodi.load[0]" 
                ];
   };     
 

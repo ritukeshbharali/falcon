@@ -1,4 +1,12 @@
-/* Input file for Winkler L-shaped panel */
+/* 
+  Case    : Concrete L-Panel fracture
+  Ref     : 
+  FE model: MicroPhaseFractureExtIt
+  Material: MiehePhase (Spectral split based phase-field fracture)
+  Loading : Dirichlet
+  Implicit: Nonlin
+  Solver  : SkylineLU
+*/
 
 
 // Setup log file for the entire simulation

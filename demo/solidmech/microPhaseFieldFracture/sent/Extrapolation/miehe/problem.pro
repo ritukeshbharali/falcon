@@ -1,4 +1,12 @@
-/* Input file for Single Edge Notched specimen under Tension (SENT) */
+/* 
+  Case    : Single Edge Notched specimen under Tension (SENT)
+  Ref     : DOI: 10.1007/s00466-023-02380-1
+  FE model: MicroPhaseFractureExt
+  Material: MiehePhase (Spectral split based phase-field fracture)
+  Loading : Dirichlet
+  Implicit: Nonlin (Jive Newton-Raphson)
+  Solver  : SkylineLU
+*/
 
 
 // Setup log file for the entire simulation
