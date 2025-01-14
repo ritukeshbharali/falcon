@@ -1,4 +1,4 @@
-/* Input file for Winkler L-shaped panel */
+/* Input file for Winkler L-panel fracture FE simulation */
 
 
 // Setup log file for the entire simulation
