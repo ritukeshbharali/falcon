@@ -113,9 +113,14 @@ model = "Matrix"
 };
 
 
-// If you look into the chain module in main.cpp, the last 
-// module is 'extraModules'. 'extraModules' allow the user to
-// define a chain of modules to be executed at runtime.
+// 'extraModules' are modules that has the flexibility to be 
+// defined at runtime. Here, we have added a 'solver' of type
+// Nonlin, 'graph' of type Graph for real-time visualization 
+// of load-displacement curve, 'lodi' of Sample that writes 
+// the load-displacement curve, 'view' of type FemView for 
+// real-time visualization of the damage and 'vtk' of type 
+// Paraview to output solution, stress, etc to vtu files. 
+// These modules would be executed in the order presented.
 
 extraModules =
 {

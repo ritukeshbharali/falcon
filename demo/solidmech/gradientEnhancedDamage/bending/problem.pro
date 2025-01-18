@@ -4,7 +4,6 @@
 
 log =
 {
-  // Print informational messages to the terminal.
   pattern = "*.info";
   file    = "-$(CASE_NAME).log";
 };

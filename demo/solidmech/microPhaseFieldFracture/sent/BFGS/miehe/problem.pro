@@ -10,8 +10,12 @@ log =
 };
 
 
-// Setup command line options and number of steps to run
-// with runWhile, i being step number
+// 'control' refers to the Control Module. fgMode = false 
+// indicates that once the runWhile is fulfilled, the
+// simulation will terminate. If set to true, the user can
+// execute 'step 100' to run 100 more steps. In 'runWhile',
+// 'i' is the step number. One can also use 't' for time, if
+// simulation involves time.
 
 control = 
 {
@@ -21,8 +25,8 @@ control =
 };
 
 
-// Additional input file that stores constraints
-// for the problem
+// 'input' refers to the Input Module. 'file' containing
+// mesh, initial solution, and constraints are provided.
 
 input =
 {
@@ -30,15 +34,12 @@ input =
 };
 
 
-/* Model tree for the the problem. We work with 'Matrix'
-   type model of type 'FEM'. In it, we define multi models.
-   The "bulk" model is a PhaseFieldDamage FE model, which
-   assembles stiffness matrix and internal force, among
-   other things. The "cons" model of type Dirichlet enforces
-   Dirichlet boundary conditions. The "lodi" model stores
-   the load-displacement data for a certain set of nodes 
-   (TopNodes in this case).
-*/
+// Jive's concept of model and modules are used here. Models 
+// perform the actions requested by the modules. We define a
+// 'model' of type 'Matrix', the matrix model is of 'type'
+// 'FEM'. Multiple sub-models may contribute to the system (
+// stiffness) matrix and forces, so we choose 'model' as
+// 'multi', within which we define other models.
 
 model = "Matrix"
 {
@@ -101,6 +102,16 @@ model = "Matrix"
 
   };
 };
+
+
+// 'extraModules' are modules that has the flexibility to be 
+// defined at runtime. Here, we have added a 'solver' of type
+// Nonlin, 'graph' of type Graph for real-time visualization 
+// of load-displacement curve, 'lodi' of Sample that writes 
+// the load-displacement curve, 'view' of type FemView for 
+// real-time visualization of the damage and 'vtk' of type 
+// Paraview to output solution, stress, etc to vtu files. 
+// These modules would be executed in the order presented.
 
 extraModules =
 {
