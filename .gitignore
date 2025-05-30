@@ -60,6 +60,7 @@
 /build/falcon
 /build/OBJ_DBG
 /build/falcon-dbg
+/build/makefile
 
 # Mac OS
 .DS_Store
