@@ -133,10 +133,12 @@ model = "Matrix"
     {
        model =
        {
-         type     = "Neumann";
-         elements = "Internal1Elems";
-         loads    = [0.0,0.0,1.e-2,0.0];
-         shape  =
+         type      = "Neumann";
+         elements  = "Internal1Elems";     // Element set
+         loadInit  = 1.e-2;          // Initial load
+         loadIncr  = 0.0;            // Load increment
+         dof       = "dp";           // Loaded dof
+         shape  = 
           {
             type  = "BLine2";
             shapeFuncs  =
@@ -202,7 +204,7 @@ extraModules =
         {
           type        = "Pardiso";
           numThreads  = 2;
-          sortColumns = 1;
+          sortColumns = true;
         };
         b1 = 
          {
@@ -221,7 +223,7 @@ extraModules =
         {
           type        = "Pardiso";
           numThreads  = 2;
-          sortColumns = 1;
+          sortColumns = true;
         };
         model = none;
       };
@@ -236,7 +238,7 @@ extraModules =
         {
           type        = "Pardiso";
           numThreads  = 2;
-          sortColumns = 1;
+          sortColumns = true;
         };
         model = none;
       };
