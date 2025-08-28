@@ -1,6 +1,6 @@
 /* 
-  sm05    : Block under tension
-  FE model: Local Crystal Plasticity
+  sm06    : Block under tension
+  FE model: Gradient Crystal Plasticity
   Material: Hooke (elastic part)
   Loading : Dirichlet
   Implicit: Nonlin
@@ -50,13 +50,13 @@ input =
 model = "Matrix"
 {
   matrix.type = "Sparse";
-  matrix.symmetric = false;
+  matrix.symmetric = true;
 
   model       =  "Multi"
   {
     models = ["bulk1","bulk2","bulk3","bulk4","bulk5","cons","lodi"];
 
-    bulk1 = "LocalCrystalPlasticity"
+    bulk1 = "GradientCrystalPlasticity"
 
     {
       elements = "Domain1Elems";
@@ -76,6 +76,7 @@ model = "Matrix"
 
         young    = 100.e+09;
         poisson  = 0.3;
+        rho      = 0.0;
       };
 
       dtime  = 1.0;
@@ -87,6 +88,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [1.,1.,0.];
         direction = [-1.,1.,0.];
       };
@@ -96,12 +98,13 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [0.,1.,0.];
         direction = [1.,0.,0.];
       };
     };
 
-    bulk2 = "LocalCrystalPlasticity"
+    bulk2 = "GradientCrystalPlasticity"
 
     {
       elements = "Domain2Elems";
@@ -121,6 +124,7 @@ model = "Matrix"
 
         young    = 100.e+09;
         poisson  = 0.3;
+        rho      = 0.0;
       };
 
       dtime  = 1.0;
@@ -132,6 +136,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [0.3660254,1.3660254,0.];
         direction = [-1.3660254,0.3660254,0.];
       };
@@ -141,12 +146,13 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.5,0.8660254,0.];
         direction = [0.8660254,0.5,0.];
       };
     };
 
-    bulk3 = "LocalCrystalPlasticity"
+    bulk3 = "GradientCrystalPlasticity"
 
     {
       elements = "Domain3Elems";
@@ -166,6 +172,7 @@ model = "Matrix"
 
         young    = 100.e+09;
         poisson  = 0.3;
+        rho      = 0.0;
       };
 
       dtime  = 1.0;
@@ -177,6 +184,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [0.12325683, 1.40883205,0.];
         direction = [-1.40883205, 0.12325683,0.];
       };
@@ -186,12 +194,13 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.64278761, 0.76604444,0.];
         direction = [0.76604444, 0.64278761,0.];
       };
     };
 
-    bulk4 = "LocalCrystalPlasticity"
+    bulk4 = "GradientCrystalPlasticity"
 
     {
       elements = "Domain4Elems";
@@ -211,6 +220,7 @@ model = "Matrix"
 
         young    = 100.e+09;
         poisson  = 0.3;
+        rho      = 0.0;
       };
 
       dtime  = 1.0;
@@ -222,6 +232,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.3660254, 1.3660254,0.];
         direction = [-1.3660254, -0.3660254,0.];
       };
@@ -231,12 +242,13 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.8660254, 0.5,0.];
         direction = [0.5, 0.8660254,0.];
       };
     };
 
-    bulk5 = "LocalCrystalPlasticity"
+    bulk5 = "GradientCrystalPlasticity"
 
     {
       elements = "Domain5Elems";
@@ -256,6 +268,7 @@ model = "Matrix"
 
         young    = 100.e+09;
         poisson  = 0.3;
+        rho      = 0.0;
       };
 
       dtime  = 1.0;
@@ -267,6 +280,7 @@ model = "Matrix"
         n         = 3.0;
         tstar     = 1.0e-4;
         tauY      = 200.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.70710678, 1.22474487,0.];
         direction = [-1.22474487, -0.70710678,0.];
       };
@@ -276,6 +290,7 @@ model = "Matrix"
         n         = 7.0;
         tstar     = 1.0e-4;
         tauY      = 250.e+06;
+        selfH     = 1.e+09;
         plane     = [-0.96592583, 0.25881905,0.];
         direction = [0.25881905, 0.96592583,0.];
       };
@@ -353,7 +368,7 @@ extraModules =
     };
 
     // Define the data sets to be visualized.
-    dataSets = [ "state", "slip"];
+    dataSets = [ "state", "tau"];
     
     // 'state' is the solution vector found during simulations
     state =
@@ -362,10 +377,10 @@ extraModules =
       vector = "state";
     };
 
-    slip =
+    tau =
     {
       type   = "Table";
-      vector = "nodes/slip";
+      vector = "nodes/tau";
     };
   
     // Settings for visualizing the finite element mesh.
@@ -389,7 +404,7 @@ extraModules =
       colors =
       {
         type = "MeshColorView";
-        data = "slip[slip0]";
+        data = "state[slip0]";
       };
     };
     

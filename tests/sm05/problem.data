@@ -11,5 +11,7 @@
   dx[BottomNodes] = 0.0;
   dx[RightNodes]  = 0.0;
   dx[LeftNodes]   = 0.0;
+  slip0[InternalNodes]   = 0.0;
+  slip1[InternalNodes]   = 0.0;
 
 </NodeConstraints>
