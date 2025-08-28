@@ -7,11 +7,22 @@
   Solver  : Skyline
 */
 
+// Setup a log file for the entire simulation. For additional
+// default options used in the analysis, always check the log.
+
 log =
 {
   pattern = "*.debug";
   file    = "$(CASE_NAME).log";
 };
+
+
+// 'control' refers to the Control Module. fgMode = false 
+// indicates that once the runWhile is fulfilled, the
+// simulation will terminate. If set to true, the user can
+// execute 'step 100' to run 100 more steps. In 'runWhile',
+// 'i' is the step number. One can also use 't' for time, if
+// simulation involves time.
 
 control = 
 {
@@ -20,10 +31,27 @@ control =
   runWhile = "i < 2";
 };
 
+
+// 'input' refers to the Input Module. 'file' containing
+// mesh, initial solution, and constraints are provided.
+
 input =
 {
   file = "$(CASE_NAME).data";
 };
+
+
+// Jive's concept of model and modules are used here. Models 
+// perform the actions requested by the modules. We define a
+// 'model' of type 'Matrix', the matrix model is of 'type'
+// 'FEM'. Multiple sub-models may contribute to the system (
+// stiffness) matrix and forces, so we choose 'model' as
+// 'multi', within which we define model 'bulk' and 'force'.
+// 'bulk' is of type 'SaturatedPorous' and operates on
+// 'DomainElems'. 'shape' functions and integration scheme 
+// is then defined, along with other model parameters. 'force'
+// uses a LoadScale model defined in Jive in conjunction with
+// a Neumann model.
 
 model = "Matrix"
 {
@@ -89,6 +117,17 @@ model = "Matrix"
   };
 };
 
+// If you look into the chain module in main.cpp, the last 
+// module is 'extraModules'. 'extraModules' allow the user to
+// define a chain of modules to be executed at runtime. Here,
+// we have added 'solver' and 'view' modules. These
+// modules would be executed in the order presented. 'solver'
+// modules is of type 'Nonlin', which is the Newton-Raphson
+// solver from Jive. It requires an inner linear 'solver', 
+// which is set to 'SkylineLU' from Jive. 'view' is of type
+// FemView, which allows real-time visualization of FE
+// solution fields and internal variables.
+
 extraModules =
 {
   modules = ["solver","view"];
@@ -106,7 +145,9 @@ extraModules =
       };
   };
 
-  // FemViewModule, provides a visiualisation of the mesh during simulation. 
+  // FemView for real-time visualization (do not use this on
+  // cluster runs). 
+
   view = "FemView"
   {
 

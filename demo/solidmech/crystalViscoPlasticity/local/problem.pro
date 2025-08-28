@@ -10,8 +10,12 @@ log =
 };
 
 
-// Setup command line options and number of steps to run
-// with runWhile, i being step number
+// 'control' refers to the Control Module. fgMode = false 
+// indicates that once the runWhile is fulfilled, the
+// simulation will terminate. If set to true, the user can
+// execute 'step 100' to run 100 more steps. In 'runWhile',
+// 'i' is the step number. One can also use 't' for time, if
+// simulation involves time.
 
 control = 
 {
@@ -21,8 +25,8 @@ control =
 };
 
 
-// Additional input file that stores constraints
-// for the problem
+// 'input' refers to the Input Module. 'file' containing
+// mesh, initial solution, and constraints are provided.
 
 input =
 {
@@ -30,15 +34,14 @@ input =
 };
 
 
-/* Model tree for the the problem. We work with 'Matrix'
-   type model of type 'FEM'. In it, we define multi models.
-   The "bulk" model is a GradientCrystalPlasticity FE model, 
-   which assembles stiffness matrix and internal force, among
-   other things. The "cons" model of type Dirichlet enforces
-   Dirichlet boundary conditions. The "lodi" model stores
-   the load-displacement data for a certain set of nodes 
-   (TopNodes in this case).
-*/
+// Jive's concept of model and modules are used here. Models 
+// perform the actions requested by the modules. We define a
+// 'model' of type 'Matrix', the matrix model is of 'type'
+// 'FEM'. Multiple sub-models may contribute to the system (
+// stiffness) matrix and forces, so we choose 'model' as
+// 'multi', within which we define models 'bulk1' to 'bulk5'
+// for the different grains, 'cons' for the constraints and a
+// 'lodi' for record the load-displacement on TopNodes.
 
 model = "Matrix"
 {
@@ -295,6 +298,22 @@ model = "Matrix"
   };
 };
 
+
+// If you look into the chain module in main.cpp, the last 
+// module is 'extraModules'. 'extraModules' allow the user to
+// define a chain of modules to be executed at runtime. Here,
+// we have added 'solver', 'view', 'vtk' and 'sample' modules.
+// These modules would be executed in the order presented. 
+// 'solver' module is of type 'FlexArclen', which adaptively 
+// switches between Nonlin (Newton-Raphson solver) and 
+// tsArcLen, which is the time-step size computing arc-length
+// method. For both solvers, the inner linear 'solver', 
+// is set to 'SkylineLU' from Jive. 'view' is of type
+// FemView, which allows real-time visualization of FE
+// solution fields and internal variables. 'vtk' is of type
+// Paraview, which allows exporting solution and other fields
+// into vtu file for visualization in Paraview, VisIt.
+
 extraModules =
 {
   modules = ["solver","lodi","graph","view","vtkout"];
@@ -316,12 +335,20 @@ extraModules =
       };
   };
 
+
+  // Sample module to write the load-displacement data to
+  // file.
+
   lodi = "Sample"
     {
       file       = "$(CASE_NAME)_lodi.dat";
       header     = "  uy | fy ";
       dataSets   = ["model.model.lodi.disp[1]","model.model.lodi.load[1]"];
     };
+
+
+  // Graph for real-time visualization of 2D plot such as 
+  // load-displacement (do not use this on cluster runs). 
 
   graph =
   {
@@ -335,7 +362,10 @@ extraModules =
       };
    }; 
 
-  // FemViewModule, provides a visiualisation of the mesh during simulation. 
+  
+  // FemView for real-time visualization (do not use this on
+  // cluster runs). 
+
   view = "FemView"
   {
 
@@ -389,6 +419,16 @@ extraModules =
     //updateWhen = "accepted";
     
   };
+
+
+  // Paraview Module is used to export solution and other
+  // fields. By default, the solution field(s) are included.
+  // In addition to that, one can export cellData (averaged
+  // over Gauss point) and/or pointData (averaged over nodes).
+  // One may also set a printInterval if one does not require
+  // printing on every step. Here "allElems" is the set of
+  // elements used for the export, which is usually the full
+  // domain.
 
   vtkout = "Paraview"
     {
