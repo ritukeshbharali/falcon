@@ -46,6 +46,7 @@
 
 /* Include other headers */
 
+#include "util/XNames.h"
 #include "NeumannModel.h"
 
 using jive::model::Actions;
@@ -61,10 +62,10 @@ using jive::model::Actions;
 
 
 const char*  NeumannModel::TYPE_NAME          = "Neumann";
-const char*  NeumannModel::LOAD_INIT_PROP     = "loadInit";
-const char*  NeumannModel::LOAD_INCR_PROP     = "loadIncr";
-const char*  NeumannModel::DOFS_PROP          = "dof";
+const char*  NeumannModel::LOADS_PROP         = "loads";
 const char*  NeumannModel::SHAPE_PROP         = "shape";
+const char*  NeumannModel::DTIME_PROP         = "dtime";
+const char*  NeumannModel::DTIME_MULT_PROP    = "dtimeMult";
 
 
 //-----------------------------------------------------------------------
@@ -78,11 +79,7 @@ NeumannModel::NeumannModel
     const Properties&  props,
     const Properties&  globdat ) :
 
-    Super     ( name ),
-    load_     ( 0.0 ),
-    load0_    ( 0.0 ),
-    loadInit_ ( 0.0 ),
-    loadIncr_ ( 0.0 )
+    Super ( name )
 
 {
   using jive::util::joinNames;
@@ -151,32 +148,47 @@ NeumannModel::NeumannModel
 
   dofs_  = XDofSpace::get ( nodes_.getData(), globdat );
 
-  // Get the loaded dof and check whether it exists in DofSpace
+  // Get number of dofs from the XDofSpace
 
-  myProps.get ( loadDof_, DOFS_PROP );
+  const int          ndofs    = dofs_->typeCount   ();
+  const StringVector dofNames = dofs_->getTypeNames();
 
-  dofType_ = dofs_->findType ( loadDof_ );
+  dofNames_.resize ( ndofs );
+  dofTypes_.resize ( ndofs );
+  
+  dofNames_ = dofNames;
 
-  if ( dofType_ < 0 )
+  for ( idx_t i = 0; i < ndofs; i++ )
+  {
+    dofTypes_[i] = dofs_->addType ( dofNames_[i] );
+  }
+
+  loads_   .resize ( ndofs );
+  loads_   = 0.0;
+
+  myProps.get ( loads_, LOADS_PROP );
+  myConf. set ( LOADS_PROP, loads_ );
+
+  if ( loads_.size() != ndofs )
   {
     throw IllegalInputException (
       context,
       String::format (
-        "dof: %s does not exist in DofSpace",
-        loadDof_
+        "loads has invalid size: %d (should be %d)",
+        loads_.size(),
+        ndofs
       )
     );
   }
 
-  myConf. set ( DOFS_PROP, loadDof_ );
+  dtime_ = 1.0;
+  myProps.find ( dtime_, DTIME_PROP );
+  myConf. set  ( DTIME_PROP, dtime_ );
 
-  // Get the load increment
+  dtimeMult_ = false;
+  myProps.find ( dtimeMult_, DTIME_MULT_PROP );
+  myConf. set  ( DTIME_MULT_PROP, dtimeMult_ );
 
-  myProps.find ( loadInit_, LOAD_INIT_PROP );
-  myConf. set  ( LOAD_INIT_PROP, loadInit_ );
-
-  myProps.find ( loadIncr_, LOAD_INCR_PROP );
-  myConf. set  ( LOAD_INCR_PROP, loadIncr_ );
 }
 
 
@@ -237,79 +249,32 @@ bool NeumannModel::takeAction
   if ( action == Actions::GET_EXT_VECTOR )
   {
     Vector fext;
+    double scale;
 
+    scale = 1.0;
+
+    params.find ( scale, ActionParams::SCALE_FACTOR );
     params.get  ( fext,  ActionParams::EXT_VECTOR   );
 
-    getExtForce_    ( fext, globdat );
+    getExtForce_    ( fext, scale, globdat );
+
+    globdat.set( "fexternal", fext );
+
+    //System::out() << "External load set \n";
 
     return true;
   }
 
-  // actions after accepting/committing to a solution
+  /** SET_STEP_SIZE: Implements changes to the step-size, thrown by a
+   *  solver module (e.g., AdaptiveStepping, ReduceStepping)
+   */ 
 
-  if ( action == Actions::COMMIT )
+  if ( action == XActions::SET_STEP_SIZE )
   {
-    commit_ ( params, globdat );
-
-    return true;
-  }
-
-  // advance to next time step
-
-  if ( action == Actions::ADVANCE )
-  {
-    globdat.set ( "var.accepted", true );
-
-    advance_ ( globdat );
-
-    return true;
+    setStepSize_ ( params );
   }
 
   return false;
-}
-
-
-//-----------------------------------------------------------------------
-//   init_
-//-----------------------------------------------------------------------
-
-
-void NeumannModel::init_ ( const Properties& globdat )
-{
-  // Update the Neumann load
-
-  load_ = load0_ = loadInit_;
-}
-
-
-//-----------------------------------------------------------------------
-//   advance_
-//-----------------------------------------------------------------------
-
-
-void NeumannModel::advance_ ( const Properties& globdat )
-{
-  // Update the total value of Neumann load
-
-  load_  = load0_ + loadIncr_;
-
-}
-
-
-//-----------------------------------------------------------------------
-//   commit_
-//-----------------------------------------------------------------------
-
-
-void NeumannModel::commit_
-
-  ( const Properties&  params,
-    const Properties&  globdat )
-
-{
-  // Update old Neumann load
-
-  load0_  = load_;
 }
 
 
@@ -320,6 +285,7 @@ void NeumannModel::commit_
 void NeumannModel::getExtForce_
 
   ( const Vector&       fext,
+    double              scale,
     const Properties&   globdat ) const
 
   {
@@ -331,27 +297,30 @@ void NeumannModel::getExtForce_
     const int elemCount = ielems.size         ();
     const int nodeCount = shape_->nodeCount   ();
     const int ipCount   = shape_->ipointCount ();
+    const int loadCount = dofTypes_.size      ();
+    const int dofCount  = nodeCount * loadCount ;
 
-    Vector    fe        ( nodeCount );
-    IdxVector idofs     ( nodeCount );
-    IdxVector inodes    ( nodeCount );
-    Vector    weights   ( ipCount   );
-    Matrix    coords    ( rank_, nodeCount );
-    Matrix    normals   ( rank_, ipCount   );
+    Vector    fe        ( dofCount          );
+    IdxVector idofs     ( dofCount          );
+    IdxVector inodes    ( nodeCount         );
+    Vector    weights   ( ipCount           );
+    Matrix    coords    ( rank_, nodeCount  );
+    Matrix    normals   ( rank_, ipCount    );
 
     // Loop over surface elements
 
     for ( idx_t ie = 0; ie < elemCount; ie++ )
-    {  
+    {
+      
       // Get the global element index.
 
-      const int ielem = ielems[ie];
+      int ielem = ielems[ie];
 
       // Get the element coordinates and DOFs.
 
       elems_. getElemNodes  ( inodes, ielem  );
       nodes_. getSomeCoords ( coords, inodes );
-      dofs_-> getDofIndices ( idofs,  inodes, dofType_ );
+      dofs_-> getDofIndices ( idofs,  inodes, dofTypes_ );
       shape_->getNormals    ( normals, weights, coords );
 
       // Initialize the element load vector
@@ -362,7 +331,21 @@ void NeumannModel::getExtForce_
     
       for ( int ip = 0; ip < ipCount; ip++ )
       {
-        fe += weights[ip] * load_ * sfuncs(ALL,ip);
+
+        // Loop over the load dofs
+
+        for ( int ldof = 0; ldof < loadCount; ldof++ )
+        {
+          double load = scale * weights[ip] * loads_[ldof];
+
+          if ( dtimeMult_ )
+          {
+            load *= dtime_;
+            // System::out() << "Load multiplied! \n";
+          }
+
+          fe[slice(ldof,END,loadCount)] += load * sfuncs(ALL,ip);
+        }
       }
 
       // assemble into the global external force vector
@@ -373,12 +356,33 @@ void NeumannModel::getExtForce_
   }
 
 
+
+//-----------------------------------------------------------------------
+//   setStepSize_
+//-----------------------------------------------------------------------
+
+void NeumannModel::setStepSize_
+
+  ( const Properties&  params )
+
+{
+  double       dt;
+
+  params.get ( dt,  XProps::STEP_SIZE   );
+
+  System::out() << "Neumann Model: Setting step size to " << dt << "\n";
+
+  dtime_ = dt;
+  
+}  
+
+
 //=======================================================================
 //   related functions
 //=======================================================================
 
 //-----------------------------------------------------------------------
-//   NeumannModel
+//   newNeumannModel
 //-----------------------------------------------------------------------
 
 

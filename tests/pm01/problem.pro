@@ -68,12 +68,10 @@ model = "Matrix"
     force =  "LoadScale"
     {
        model =
-       {
+        {
          type     = "Neumann";
          elements = "TopElems";
-         loadInit  = -1.0e+4;
-         loadIncr  = 0.0;
-         dof       = "dy";
+         loads    = [0.0,-1.0e+04,0.0]; // size = dofs
          shape  =
           {
             type  = "BLine3";
@@ -83,7 +81,7 @@ model = "Matrix"
             };
             intScheme = "Gauss2";
           };
-       };
+        };
     };  
 
   };
