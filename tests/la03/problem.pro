@@ -102,7 +102,7 @@ extraModules =
       bounds = ["b1"];
       solver =
       {
-        type = "MUMPS";
+        type = "Pardiso";
       };
 
       b1 = 
