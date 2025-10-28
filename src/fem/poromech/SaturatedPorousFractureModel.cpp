@@ -829,6 +829,7 @@ void SaturatedPorousFractureModel::getMatrix_
 
   Matrix      elemMat21  ( nodeCount, dispCount ); // pres-disp
   Matrix      elemMat22  ( nodeCount, nodeCount ); // pres-pres
+  Matrix      elemMat23  ( nodeCount, nodeCount ); // pres-phi
 
   Matrix      elemMat31  ( nodeCount, dispCount );  // phi-disp
   Matrix      elemMat33  ( nodeCount, nodeCount );  // phi-phi
@@ -929,6 +930,7 @@ void SaturatedPorousFractureModel::getMatrix_
 
       elemMat21  = 0.0;
       elemMat22  = 0.0;
+      elemMat23  = 0.0;
 
       elemMat31  = 0.0;
       elemMat33  = 0.0;
@@ -1026,9 +1028,27 @@ void SaturatedPorousFractureModel::getMatrix_
       double Psi = phaseMaterial_->givePsi();
       stressP    = phaseMaterial_->giveDerivPsi();
 
+      // Compute the porosity based on phase-field fracture
+
+      double  n = n0_;
+      double dn = 0.0;   // derivative w.r.t phase-field
+
+      if ( pf > 0.8 && fracPorosity_ )
+      {
+        n += 25. * ::pow( pf - 0.8, 2.0 ) * (1.0 - n0_);
+        dn = 50. * ( pf - 0.8 ) * ( 1.0 - n0_ );
+      }
+
       // Compute the storage coefficient and its derivative
 
-      const double Sto = ( ( alpha_ - n0_ ) / Ks_ ) + ( n0_ / Kf_ );
+      const double Sto = ( ( alpha_ - n ) / Ks_ ) + ( n / Kf_ );
+
+      double dSto = 0.0;
+
+      if ( pf > 0.8 && fracPorosity_ )
+      {
+        dSto = ( ( alpha_ - dn ) / Ks_ ) + ( dn / Kf_ );
+      }
 
       // Compute dissipation
 
@@ -1050,10 +1070,11 @@ void SaturatedPorousFractureModel::getMatrix_
 
       // Compute bulk and fracture permeability
 
-      Matrix kappaComb ( rank_, rank_ );  kappaComb = 0.0;
-      Matrix kappaBulk ( rank_, rank_ );  kappaBulk = 0.0;
-      Matrix kappaFrac ( rank_, rank_ );  kappaFrac = 0.0;
-      Matrix I2        ( rank_, rank_ );  I2        = 0.0;
+      Matrix kappaComb  ( rank_, rank_ );  kappaComb = 0.0;
+      Matrix dkappaComb ( rank_, rank_ ); dkappaComb = 0.0;
+      Matrix kappaBulk  ( rank_, rank_ );  kappaBulk = 0.0;
+      Matrix kappaFrac  ( rank_, rank_ );  kappaFrac = 0.0;
+      Matrix I2         ( rank_, rank_ );  I2        = 0.0;
 
       I2         = tensorUtils::getI2 ( rank_ );
 
@@ -1114,6 +1135,7 @@ void SaturatedPorousFractureModel::getMatrix_
         if ( pf > 0.8 )
         {
           kappaComb  += 25. * ::pow( (pf - 0.8), 2.0 ) * KeffFrac_ * I2;
+          dkappaComb  = 50. * (pf - 0.8) * KeffFrac_ * I2;
         }
       }
       else // cubic (aniso and iso versions)
@@ -1166,7 +1188,8 @@ void SaturatedPorousFractureModel::getMatrix_
 
         if ( pf > 0.8 )
         {
-          kappaComb = kappaBulk + 25. * ::pow( pf - 0.8, 2.0 ) * kappaFrac;
+          kappaComb   = kappaBulk + 25. * ::pow( pf - 0.8, 2.0 ) * kappaFrac;
+          dkappaComb  = 50. * (pf - 0.8) * kappaFrac;
         }
         else
         {
@@ -1194,6 +1217,16 @@ void SaturatedPorousFractureModel::getMatrix_
         elemMat22  += wip * (  Sto / dtime_ * matmul ( Nip, Nip )
                              + mc3.matmul ( bet, kappaComb, be ) );
 
+        if ( pf > 0.8)
+        {
+          elemMat23  += wip * (  dSto / dtime_ * matmul ( Nip, Nip ) * (p - p0)
+                               + matmul ( mc1.matmul ( mc2.matmul ( bet, dkappaComb )
+                                  , Vector ( mc1.matmul( be, pres ) - rhoF_ * gVec_ ) )
+                                  , Nip ) 
+                              );
+        }
+        
+
         elemMat31  += wip * loading * dgphi * ( matmul ( Nip, matmul(stressP, bd) ) );
         elemMat33  += wip * ( ( gc_/(cw_*l0_) * ddw + ddgphi * Psi) 
                           * matmul ( Nip, Nip ) + (2.0 * gc_*l0_/cw_) 
@@ -1205,8 +1238,15 @@ void SaturatedPorousFractureModel::getMatrix_
       elemForce1 +=  wip * ( mc1.matmul ( bdt, stress ) );
       elemForce1 -=  wip * alpha_ * p * ( mc1.matmul ( bdt, voigtDiv_ ) );
       elemForce2 +=  wip *  (  Nip * (  Sto * (p-p0) + alpha_ * ( evol - evol0 )  ) / dtime_ 
-                             + mc1.matmul ( mc3.matmul( bet, kappaComb, be ), pres ) );
+                            // + mc1.matmul ( mc3.matmul( bet, kappaComb, be ), pres ) 
+                               + mc1.matmul ( mc2.matmul( bet, kappaComb ),
+                                              Vector ( mc1.matmul( be, pres ) - rhoF_ * gVec_ ) ) 
+                            );
       elemForce3 +=  wip * ( Nip * ( gc_/(cw_*l0_) * dw + dgphi * Psi) + (2.0 * gc_*l0_/cw_) * mc1.matmul ( mc2. matmul ( bet, be ), phi ) );
+
+      // add the gravity body force
+
+      elemForce1[slice(rank_-1,END,rank_)] -= Nip * wip * ( n * rhoF_ + ( 1.0 - n ) * rhoS_ ) * gVec_[rank_-1];
 
     }  // end of loop on integration points
 
@@ -1226,6 +1266,7 @@ void SaturatedPorousFractureModel::getMatrix_
       if ( keepOffDiags_ )
       {
         mbuilder -> addBlock ( dispDofs, phiDofs,  elemMat13 );
+        mbuilder -> addBlock ( presDofs, phiDofs,  elemMat23 );
         mbuilder -> addBlock ( phiDofs,  dispDofs, elemMat31 );
       }
     }
@@ -1607,10 +1648,11 @@ void SaturatedPorousFractureModel::getUnitLoad_
   Matrix      coords     ( rank_, nodeCount );
 
   // current element vector state:
-  // displacement, pressure
+  // displacement, pressure, phase-field
   
   Vector      disp       ( dispCount );
   Vector      pres       ( nodeCount );
+  Vector      phi        ( nodeCount );
 
   // old step element vector state:
   // displacement, pressure
@@ -1686,6 +1728,7 @@ void SaturatedPorousFractureModel::getUnitLoad_
 
     disp = select ( state, dispDofs );
     pres = select ( state, presDofs );
+    phi  = select ( state, phiDofs  );
 
     // Get old step nodal displacements and pressures
 
@@ -1731,9 +1774,22 @@ void SaturatedPorousFractureModel::getUnitLoad_
       const double p    = dot ( Nip, pres  );
       const double p0   = dot ( Nip, pres0 );
 
+      // Compute the integration point phase-field
+
+      const double pf   = dot ( Nip, phi   );
+
+      // Compute phase-field dependent porosity
+
+      double n  = n0_;
+
+      if ( pf > 0.8 && fracPorosity_ )
+      {
+        n += 25. * ::pow( pf - 0.8, 2.0 ) * (1.0 - n0_);
+      }
+
       // Compute the storage coefficients
 
-      const double Sto   = ( ( alpha_ - n0_ ) / Ks_ ) + ( n0_ / Kf_ );
+      const double Sto   = ( ( alpha_ - n ) / Ks_ ) + ( n / Kf_ );
 
       // Compute volumetric strain
 
