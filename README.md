@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/falcon.png" alt="Falcon Finite Element Mesh" width="500"/><br/>
+  <img src="docs/falcon.png" alt="Falcon Finite Element Mesh" width="250"/><br/>
 
   <img src="https://github.com/ritukeshbharali/falcon/actions/workflows/ci.yml/badge.svg" alt="Ubuntu Build Status"/>
   <a href="https://app.codacy.com/gh/ritukeshbharali/falcon/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade">
