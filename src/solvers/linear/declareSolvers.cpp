@@ -36,6 +36,7 @@
  *     - [02 Jan  2024] Added wrapper to Panua Pardiso (RB)
  *     - [16 Apr  2024] Added wrapper to NVIDIA cuDSS (RB)
  *     - [26 Aug  2024] Added wrapper to SuperLU_MT (RB)
+ *     - [27 Nov  2025] Removed AMGCL support (RB)
  */
 
 
@@ -65,10 +66,6 @@
 #include <jive/solver/NullSpaceRestrictor.h>
 #include <jive/solver/RigidBodyRestrictor.h>
 #include <jive/solver/declare.h>
-
-#if defined(WITH_AMGCL)
-#include "AMGCLSolver.h"
-#endif
 
 #if defined(WITH_AMGX)
 #include "AMGX.h"
@@ -136,10 +133,6 @@ static void declareSolvers_ ()
   RigidBodyRestrictor :: declare ();
 
   // Added user interfaces to external solvers
-
-  #if defined(WITH_AMGCL)
-  AMGCLSolver         :: declare ();
-  #endif
 
   #if defined(WITH_AMGX)
   AMGXSolver          :: declare ();

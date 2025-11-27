@@ -3,7 +3,6 @@ External linear solvers
 
 Wrapper classes have been written to solve the system of equations with external linear solvers. Available options are: 
 
-- [AMGCL](https://github.com/ddemidov/amgcl)
 - [AMGX (NVIDIA)](https://github.com/NVIDIA/AMGX)
 - [Pardiso (Intel)](https://www.intel.com/content/www/us/en/develop/documentation/onemkl-developer-reference-c/top/sparse-solver-routines/onemkl-pardiso-parallel-direct-sparse-solver-iface.html).
 - [MUMPS](https://mumps-solver.org/)
