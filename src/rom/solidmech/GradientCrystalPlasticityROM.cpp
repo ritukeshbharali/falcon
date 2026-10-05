@@ -26,6 +26,8 @@
 #include "FalconSolidMechROMs.h"
 #include "GradientCrystalPlasticityROM.h"
 
+#include "util/MathUtils.h"
+
 
 //=======================================================================
 //   class GradientCrystalPlasticityROM
