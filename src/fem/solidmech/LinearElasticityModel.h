@@ -98,6 +98,7 @@ class LinearElasticityModel : public Model
   static const char*        DOF_NAMES[3];
   static const char*        SHAPE_PROP;
   static const char*        MATERIAL_PROP;
+  static const char*        LARGE_DEF_PROP;
   static const char*        RHO_PROP;
 
                             LinearElasticityModel
@@ -284,8 +285,11 @@ class LinearElasticityModel : public Model
   double                    rho_;            /**< Density (reqd. for mass matrix) */
   Ref<Material>             material_;       /**< Ref to the material model */
 
+  bool                      largeDef_;       /**< Large deformation flag */
+
   ShapeGradsFunc            getShapeGrads_;  /**< Function for rank-based B-matrix */
   ShapeFunc                 getShapeFuncs_;  /**< Function for rank-based N-matrix */
+  BMatrixLinFunc            getBMatrixLinFuncs_; /**< Function for rank-based linear B-matrix */
 
   SparseArray <int, 2>      ipMpMap_;        /**< Mapping between integration and material points */
   IdxVector                 isActive_;       /**< Vector that removes fully damaged elements */

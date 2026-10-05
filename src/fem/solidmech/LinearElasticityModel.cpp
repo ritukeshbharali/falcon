@@ -39,6 +39,7 @@
 const char*  LinearElasticityModel::DOF_NAMES[3]     = { "dx", "dy", "dz" };
 const char*  LinearElasticityModel::SHAPE_PROP       = "shape";
 const char*  LinearElasticityModel::MATERIAL_PROP    = "material";
+const char*  LinearElasticityModel::LARGE_DEF_PROP   = "largeDef";
 const char*  LinearElasticityModel::RHO_PROP         = "rho";
 
 //-----------------------------------------------------------------------
@@ -152,7 +153,8 @@ LinearElasticityModel::LinearElasticityModel
 
   // Select the correct function for computing the B-matrix.
 
-  getShapeGrads_ = getShapeGradsFunc ( rank_ );
+  getShapeGrads_       = getShapeGradsFunc ( rank_ );
+  getBMatrixLinFuncs_  = getBMatrixLinFunc ( rank_ );
 
   IdxVector   ielems     = egroup_.getIndices ();
   const int   ielemCount = ielems.size         ();
@@ -186,6 +188,8 @@ void LinearElasticityModel::configure
 
   props.find ( rho_, RHO_PROP );
   material_->configure  ( matProps, globdat );
+
+  props.find ( largeDef_, LARGE_DEF_PROP );
 }
 
 
@@ -202,6 +206,8 @@ void LinearElasticityModel::getConfig ( const Properties& conf,
 
   conf.set ( RHO_PROP, rho_ );
   material_->getConfig ( matConf, globdat );
+
+  conf.set ( LARGE_DEF_PROP, largeDef_ );
 }
 
 
@@ -394,13 +400,26 @@ void LinearElasticityModel::getMatrix_
 
       int ipoint = ipMpMap_ ( ielem, ip );
 
-      // Compute the B-matrix for this integration point.
+      Matrix grad ( grads(ALL,ALL,ip) );
 
-      getShapeGrads_ ( bd, grads(ALL,ALL,ip) );
+      if ( largeDef_ )
+      {
+        Matrix f ( rank_, rank_ );
 
-      // Compute the strain for this integration point.
+        getDeformationGradient ( f, disp, grad );
+        getGreenLagrangeStrain ( strain, f );
+        getBMatrixLinFuncs_    ( bd, f, grad);
+      }
+      else
+      {
+        // Compute the B-matrix for this integration point.
 
-      matmul ( strain,  bd, disp  );
+        getShapeGrads_ ( bd, grad );
+
+        // Compute the strain for this integration point.
+
+        matmul ( strain,  bd, disp  );
+      }
 
       // Store the regular strain components.
 
@@ -414,6 +433,13 @@ void LinearElasticityModel::getMatrix_
 
       wip         = ipWeights[ip];
       elemMat    += wip * mc3.matmul ( bdt, stiff, bd );
+
+      // add geometric nonlinearity
+
+      if ( largeDef_ )
+      {
+        addGeomNonlinElemMat ( elemMat, stress, grad, wip );
+      }
      
       // compute internal forces
 
