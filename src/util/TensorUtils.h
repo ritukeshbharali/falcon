@@ -4,7 +4,9 @@
  *  
  *
  *  Updates (when, what and who)
- *     - [XX YYYY 2022], 
+ *     - [05 October 2026], fixed bug in voigt2tensorRankStress and
+ *       voigt2tensorRankStrain. (2,2) or zz component is removed from
+ *       2D case.
  */
 
 #ifndef TENSOR_UTILS_H
