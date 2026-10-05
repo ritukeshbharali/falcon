@@ -415,11 +415,11 @@ Vector tensorUtils::tensor2voigtStrain
 
   c[0] = A(0,0);
   c[1] = A(1,1);
-  c[2] = A(2,2);
   c[3] = A(0,1) + A(1,0);
 
   if ( strCount == 6 )
   {
+    c[2] = A(2,2);
     c[4] = A(1,2) + A(2,1);
     c[5] = A(0,2) + A(2,0);
   }
@@ -446,11 +446,11 @@ Vector tensorUtils::tensor2voigtStress
 
   c[0] = A(0,0);
   c[1] = A(1,1);
-  c[2] = A(2,2);
   c[3] = 0.5 * ( A(0,1) + A(1,0) );
 
   if ( strCount == 6 )
   {
+    c[2] = A(2,2);
     c[4] = 0.5 * ( A(1,2) + A(2,1) );
     c[5] = 0.5 * ( A(0,2) + A(2,0) );
   }
