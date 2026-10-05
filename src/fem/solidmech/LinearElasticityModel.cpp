@@ -151,10 +151,15 @@ LinearElasticityModel::LinearElasticityModel
 
   initializeIPMPMap_ ();
 
-  // Select the correct function for computing the B-matrix.
+  // Select the correct function for computing the N-matrix and B-matrices.
 
+  getShapeFuncs_       = getShapeFunc      ( rank_ );
   getShapeGrads_       = getShapeGradsFunc ( rank_ );
-  getBMatrixLinFuncs_  = getBMatrixLinFunc ( rank_ );
+
+  if ( rank_ > 1 )
+  {
+    getBMatrixLinFuncs_  = getBMatrixLinFunc ( rank_ );
+  }
 
   IdxVector   ielems     = egroup_.getIndices ();
   const int   ielemCount = ielems.size         ();
@@ -164,7 +169,11 @@ LinearElasticityModel::LinearElasticityModel
 
   // Initialize density to zero
 
-  rho_ = 0.0;  
+  rho_ = 0.0;
+
+  // Initialize large deformation to False
+
+  largeDef_ = false;  
 }
 
 
@@ -186,10 +195,10 @@ void LinearElasticityModel::configure
   Properties  myProps  = props  .findProps ( myName_ );
   Properties  matProps = myProps.findProps ( MATERIAL_PROP );
 
-  props.find ( rho_, RHO_PROP );
   material_->configure  ( matProps, globdat );
 
-  props.find ( largeDef_, LARGE_DEF_PROP );
+  myProps.find ( rho_, RHO_PROP );
+  myProps.find ( largeDef_, LARGE_DEF_PROP );
 }
 
 
@@ -204,10 +213,18 @@ void LinearElasticityModel::getConfig ( const Properties& conf,
   Properties  myConf  = conf  .makeProps ( myName_ );
   Properties  matConf = myConf.makeProps ( MATERIAL_PROP );
 
-  conf.set ( RHO_PROP, rho_ );
   material_->getConfig ( matConf, globdat );
 
-  conf.set ( LARGE_DEF_PROP, largeDef_ );
+  myConf.set ( RHO_PROP, rho_ );
+  myConf.set ( LARGE_DEF_PROP, largeDef_ );
+
+  if ( largeDef_ && rank_ == 1 )
+{
+  throw IllegalInputException (
+    getContext(),
+    "large deformation is only supported for rank 2 or 3"
+  );
+}
 }
 
 
