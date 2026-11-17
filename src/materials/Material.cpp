@@ -3,10 +3,13 @@
 
 #include "Material.h"
 #include "HookeMaterial.h"
+#include "NeoHookeMaterial.h"
 #include "DamageMaterial.h"
 #include "AmorPhaseMaterial.h"
 #include "BourdinPhaseMaterial.h"
 #include "MiehePhaseMaterial.h"
+#include "NeoHookePhaseMaterial.h"
+#include "MooneyRivlinPhaseMaterial.h"
 
 using namespace jem;
 
@@ -231,15 +234,21 @@ Ref<Material>  newMaterial
   matConf.set  ( "rank", rank );
 
   if      ( type == "Hooke" )
-    mat = newInstance<HookeMaterial>        ( rank, globdat );
+    mat = newInstance<HookeMaterial>             ( rank, globdat );
+  else if ( type == "NeoHooke" )
+    mat = newInstance<NeoHookeMaterial>          ( rank, globdat );
   else if ( type == "Damage" )
-    mat = newInstance<DamageMaterial>       ( rank, globdat );
+    mat = newInstance<DamageMaterial>            ( rank, globdat );
   else if ( type == "AmorPhase" )
-    mat = newInstance<AmorPhaseMaterial>    ( rank, globdat );
+    mat = newInstance<AmorPhaseMaterial>         ( rank, globdat );
   else if ( type == "BourdinPhase" )
-    mat = newInstance<BourdinPhaseMaterial> ( rank, globdat );
+    mat = newInstance<BourdinPhaseMaterial>      ( rank, globdat );
   else if ( type == "MiehePhase" )
-    mat = newInstance<MiehePhaseMaterial>   ( rank, globdat );
+    mat = newInstance<MiehePhaseMaterial>        ( rank, globdat );
+  else if ( type == "NeoHookePhase" )
+    mat = newInstance<NeoHookePhaseMaterial>     ( rank, globdat );
+  else if ( type == "MooneyRivlinPhase" )
+    mat = newInstance<MooneyRivlinPhaseMaterial> ( rank, globdat );
   else
     matProps.propertyError ( name, "Invalid material: " + type );
 

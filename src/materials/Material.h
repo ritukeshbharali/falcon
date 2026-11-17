@@ -32,7 +32,10 @@ enum ProblemType {
 /** @brief 
  * 
  *  The Material class is the base class, providing common functionalities
- *  for modelling different types of materials. 
+ *  for modelling different types of materials.
+ * 
+ *  Small deformation: stress (Cauchy), strain (linearized strain)
+ *  Large deformation: stress (PK2), strain (Green-Lagrange)
  * 
  *  Derived classes are expected to provide implementation for the 'update',
  *  'updateConfig' and 'clone' functions. Material class is derived from 
